@@ -18,9 +18,11 @@ import random
 import matplotlib.pylab as plt
 from pymc3.gp.util import plot_gp_dist
 from pymc3.gp.util import cholesky
+import time
 from sklearn import datasets
 from sklearn.gaussian_process import GaussianProcessClassifier
 from sklearn.gaussian_process.kernels import RBF
+import scipy.stats as st
 
 
 # link function
@@ -89,7 +91,7 @@ if __name__== "__main__":
     
     # ML-II
     
-    
+    #for i in np.arange(len(seq))
     
     # HMC Model 
     with pm.Model() as model:
@@ -106,24 +108,48 @@ if __name__== "__main__":
             gp = pm.gp.Latent(cov_func=cov)
     
             # make gp prior
-            f = gp.prior("f", X=X_40[:,None], reparameterize=True)
+            f = gp.prior("f", X=X_80[:,None], reparameterize=False)
             
             # logit link and Bernoulli likelihood
             p = pm.Deterministic("p", pm.math.invlogit(f))
-            y_ = pm.Bernoulli("y", p=p, observed=y_40)
+            y_ = pm.Bernoulli("y", p=p, observed=y_80)
     
     with model:
-        
-            step_theta = pm.step_methods.HamiltonianMC(vars=[log_l, log_s], path_length=2)
-            step_latent = pm.step_methods.HamiltonianMC(vars=[f], path_length=10)
-            trace_hmc_40 = pm.sample(draws=200, tune=400, chains=1, step=[step_theta, step_latent])
+            draws = [500, 1000, 1500, 2000, 2500, 3000]
+            wc_seconds_split = []
+          
+            for i in draws:
+                'Measuring time for ' + str(i) + ' draws'
+                step_theta = pm.step_methods.NUTS(vars=[log_l, log_s])
+                #step_latent = pm.step_methods.NUTS(vars=[model.named_vars['f_rotated_']])
+                step_latent = pm.step_methods.NUTS(vars=[f])
+                start = time.time()
+                trace_nuts_split = pm.sample(draws=i, tune=700, chains=1, step=[step_theta, step_latent])
+                end = time.time()
+                wc_seconds_split.append(end-start)
+            #trace_nuts_40 = pm.sample(draws=i, tune=300, chains=1)
         
     with model:
         
-            step_theta = pm.step_methods.NUTS(vars=[log_l, log_s])
-            step_latent = pm.step_methods.NUTS(vars=[f])
-            trace_nuts_100_split = pm.sample(draws=200, tune=400, chains=1, step=[step_theta, step_latent])
-            trace_nuts_100_joint = pm.sample(draws=200, tune=400, chains=1)
+           draws = [500, 1000, 1500, 2000, 2500, 3000]
+           wc_seconds_joint = []
+          
+           for i in draws:
+                'Measuring time for ' + str(i) + ' draws'
+                start = time.time()
+                trace_nuts_joint = pm.sample(draws=i, tune=700, chains=1)
+                end = time.time()
+                wc_seconds_joint.append(end-start)
+                
+    plt.figure()
+    plt.plot(draws, wc_seconds_joint, label=r'Joint samples p(f, $\theta$)',)
+    plt.plot(draws, wc_seconds_split, label=r'Interleaved samples p(f | $\theta$)p($\theta$)')
+    plt.title(r'HMC Sampling of f and $\theta$',fontsize='small')
+    plt.legend(fontsize='x-small')
+    plt.xticks(fontsize='small')
+    plt.yticks(fontsize='small')
+    plt.xlabel('No. of Samples', fontsize='small')
+    plt.ylabel('Wall clock sec.', fontsize='small')
 
             
     
@@ -183,10 +209,19 @@ plt.legend();
 
 
 
+@sampled
+def linear_model(X, y):
+    shape = X.shape
+    X = pm.Normal('X', mu=tt.mean(X, axis=0), sd=np.std(X, axis=0), shape=shape)
+    coefs = pm.Normal('coefs', mu=tt.zeros(shape[1]), sd=tt.ones(shape[1]), shape=shape[1])
+    pm.Normal('y', mu=tt.dot(X, coefs), sd=tt.ones(shape[0]), shape=shape[0])
 
+X = np.random.normal(size=(1000, 10))
+w = np.random.normal(size=10)
+y = X.dot(w) + np.random.normal(scale=0.1, size=1000)
 
-
-
+with linear_model(X=X, y=y):
+    sampled_coefs = pm.sample(draws=1000, tune=500)
 # Testing the relationship between f_rotated_ and f
 
 # f_test = np.empty(shape=(len(trace_hmc),len(x)))
