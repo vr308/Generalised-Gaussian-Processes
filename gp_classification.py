@@ -108,7 +108,7 @@ if __name__== "__main__":
             gp = pm.gp.Latent(cov_func=cov)
     
             # make gp prior
-            f = gp.prior("f", X=X_80[:,None], reparameterize=False)
+            f = gp.prior("f", X=X_80[:,None], reparameterize=True)
             
             # logit link and Bernoulli likelihood
             p = pm.Deterministic("p", pm.math.invlogit(f))
