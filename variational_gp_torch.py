@@ -88,13 +88,11 @@ for i in range(training_iterations):
     
     optimizer.step()
 
-
 # Go into eval mode
 model.eval()
 likelihood.eval()
 
 with torch.no_grad():    
-    test_x = torch.linspace(0, 1, 101)
     # Get classification predictions
     observed_pred = likelihood(model(X_eval))
 
