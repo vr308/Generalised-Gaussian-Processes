@@ -64,7 +64,6 @@ with pm.Model() as model:
     Xu = pm.gp.util.kmeans_inducing_points(20, X)
 
     # initialize 20 inducing points with K-means
-    #Xu = pm.Flat("Xu", shape=20, testval=Xu_init)
     y_ = np.exp(gp.marginal_likelihood("y", X=X, Xu=Xu, y=y, noise=noise_sd))
     
     trace = pm.sample(1000)
@@ -75,7 +74,6 @@ X_new = np.linspace(-1, 11, 200)[:,None]
 with model:
     f_pred = gp.conditional("f_pred", X_new)
 
-# To use the MAP values, you can just replace the trace with a length-1 list with `mp`
 with model:
     pred_samples = pm.sample_posterior_predictive(trace, vars=[f_pred], samples=1000)
     
