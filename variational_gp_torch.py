@@ -37,8 +37,8 @@ X_eval = torch.from_numpy(X_eval).float()
 class GPClassificationModel(ApproximateGP):
     def __init__(self, train_x):
         variational_distribution = CholeskyVariationalDistribution(train_x.size(0))
-        variational_strategy = UnwhitenedVariationalStrategy(
-            self, train_x, variational_distribution, learn_inducing_locations=False
+        variational_strategy = VariationalStrategy(
+            self, train_x, variational_distribution, learn_inducing_locations=True
         )
         super(GPClassificationModel, self).__init__(variational_strategy)
         self.mean_module = gpytorch.means.ConstantMean()
@@ -66,7 +66,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.1)
 # num_data refers to the number of training datapoints
 mll = gpytorch.mlls.VariationalELBO(likelihood, 
                                     model, 
-                                    yt.numel(), 
+                                    10, 
                                     combine_terms=False)
 
 for i in range(training_iterations):

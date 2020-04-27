@@ -90,9 +90,7 @@ if __name__== "__main__":
     X_100, y_100, f_100, id_100 = generate_gp_training(X_all, f_all, 100, uniform=True, seed=seed)
     
     # ML-II
-    
-    #for i in np.arange(len(seq))
-    
+        
     # HMC Model 
     with pm.Model() as model:
     
@@ -152,7 +150,6 @@ if __name__== "__main__":
     plt.ylabel('Wall clock sec.', fontsize='small')
 
             
-    
     plt.figure(figsize=(10,4))
     plt.subplot(131)
     plt.plot(X_40, trace_nuts_100_split['p'].T, 'bo', markersize=1)
@@ -222,6 +219,8 @@ y = X.dot(w) + np.random.normal(scale=0.1, size=1000)
 
 with linear_model(X=X, y=y):
     sampled_coefs = pm.sample(draws=1000, tune=500)
+    
+    
 # Testing the relationship between f_rotated_ and f
 
 # f_test = np.empty(shape=(len(trace_hmc),len(x)))
