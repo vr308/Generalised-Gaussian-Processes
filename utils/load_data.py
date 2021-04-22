@@ -152,10 +152,6 @@ def load_coal():
     
     return
 
-def load_breast_cancer():
-    
-    return
-
 def load_pine_saplings():
     
     return
