@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SGPR (Titsias)
+SGPR (Titsias, 2009)
 
 """
 
@@ -30,13 +30,13 @@ class SparseGPR(gpytorch.models.ExactGP):
         super(SparseGPR, self).__init__(train_x, train_y, likelihood)
         self.train_x = train_x
         self.train_y = train_y
-        self.inducin_points = Z_init
-        self.num_inducing = len(Z_init)
+        self.inducing_points = Z_init
+        self.num_inducing = len(Z_init)                                                                                             
         self.mean_module = ZeroMean()
         self.base_covar_module = ScaleKernel(RBFKernel())
         self.covar_module = InducingPointKernel(self.base_covar_module, inducing_points=Z_init, likelihood=likelihood)
 
-    def forward(self, x): # returns ?
+    def forward(self, x): 
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return MultivariateNormal(mean_x, covar_x)
@@ -44,20 +44,25 @@ class SparseGPR(gpytorch.models.ExactGP):
     def elbo(self, output, y):
         
         Knn = model.base_covar_module(self.train_x).evaluate()
-        Knm = model.base_covar_module(self.train_x, Z_init).evaluate()
+        Knm = model.base_covar_module(self.train_x, self.inducing_points).evaluate()
         lhs = torch.matmul(Knm, self.covar_module._inducing_mat.inverse())
-        Qnn = torch.matmul(lhs, Knm.evaluate().T)
-        p_y = model.likelihood(output)
-        expected_log_lik = p_y.log_prob(y)
+        Qnn = torch.matmul(lhs, Knm.T)
+
         shape = Knn.shape[:-1]
-        noise_diag = self.likelihood._shaped_noise_covar(shape).diag()
+        noise_covar = self.likelihood._shaped_noise_covar(shape).evaluate()
+        noise_diag = noise_covar.diag()
+
+        #p_y = gpytorch.distributions.MultivariateNormal(torch.Tensor([0]*len(self.train_x)), Qnn + noise_covar)
+        p_y = model.likelihood(output).log_prob(y)
+        expected_log_lik = p_y.log_prob(y)
+       
         diag = Knn.diag() - Qnn.diag()
         trace_term = 0.5*(diag/noise_diag).sum() 
     
         return expected_log_lik, trace_term
             
     def train_model(self, likelihood, combine_terms=True):
-        
+
         self.train()
         likelihood.train()
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
@@ -108,7 +113,7 @@ class SparseGPR(gpytorch.models.ExactGP):
         ax.plot(self.train_x.numpy(), self.train_y.numpy(), 'kx')
         ax.plot(test_x.numpy(), y_star.mean.numpy(), 'b-')
         ax.plot(self.covar_module.inducing_points.detach(), [-2.5]*self.num_inducing, 'rx')
-        ax.fill_between(test_x.numpy(), lower.numpy(), upper.numpy(), alpha=0.5)
+        ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.5)
         ax.set_ylim([-3, 3])
         ax.legend(['Train', 'Mean', 'Inducing inputs', r'$\pm$2\sigma'])
         plt.show()
@@ -179,9 +184,6 @@ if __name__ == '__main__':
     rmse = model.rmse(y_star, test_y)
     nll = model.neg_test_log_likelihood(y_star, test_y)
     
-    # Plot predictive variances 
-    plt.figure()
-    plt.plot(y_star.covariance_matrix.diag().detach())
 
 
 # Verify: elbo, q*(u), p(f*|y)
@@ -206,13 +208,13 @@ if __name__ == '__main__':
 # l1 = torch.matmul(K_mm, W)
 # sigma = torch.matmul(l1, K_mm)
 
-# sigma = model.optimal_q_u().covariance_matrix
+sigma = model.optimal_q_u().covariance_matrix
 # Knn = model.base_covar_module(model.train_x).evaluate()
 # lhs = torch.matmul(K_nm, model.covar_module._inducing_mat.inverse())
 # Qnn = torch.matmul(lhs, K_nm.evaluate().T)
-# K_ss = model.base_covar_module(test_x)
-# lh = torch.matmul(K_star_m, K_mm_inv)
-# third_term = torch.matmul(torch.matmul(lh, sigma), lh.T)
+K_ss = model.base_covar_module(train_x)
+lh = torch.matmul(K_nm, K_mm_inv)
+third_term = torch.matmul(torch.matmul(lh, sigma), lh.T)
 
-# pred_covar = K_ss.evaluate() - torch.matmul(H, K_star_m.T) + third_term
+pred_covar = K_ss.evaluate() - torch.matmul(H, K_star_m.T) + third_term
 

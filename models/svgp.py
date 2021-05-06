@@ -9,12 +9,14 @@ import gpytorch as gpytorch
 import torch as torch
 import numpy as np
 import tqdm
-import math
-import urllib.request
 from math import floor
+import matplotlib.pyplot as plt
+from prettytable import PrettyTable
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import VariationalStrategy
+from gpytorch.kernels import ScaleKernel, RBFKernel
+from gpytorch.means import ZeroMean
 from torch.utils.data import TensorDataset, DataLoader
 
 def func(x):
@@ -22,81 +24,214 @@ def func(x):
 
 class StochasticVariationalGP(ApproximateGP):
     
-    """The sparse GP class for regression with the uncollapsed stochastic bound.
+    """ The sparse GP class for regression with the uncollapsed stochastic bound.
          The parameters of q(u) \sim N(m, S) are learnt explicitly. 
     """
       
-    def __init__(self, inducing_points): 
-        variational_distribution = CholeskyVariationalDistribution(inducing_points.size(0))
-        variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True)
-        super(GPModel, self).__init__(variational_strategy)
-        self.mean_module = gpytorch.means.ConstantMean()
+    def __init__(self, train_x, train_y, likelihood, Z_init): 
+        
+        # Locations Z corresponding to u, they can be randomly initialized or 
+        # regularly placed.
+        self.inducing_inputs = Z_init
+        self.num_inducing = len(Z_init)
+        # Sparse Variational Formulation
+        q_u = CholeskyVariationalDistribution(self.num_inducing) 
+        q_f = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
+        super(StochasticVariationalGP, self).__init__(q_f)
+        self.likelihood = likelihood
+        self.train_x = train_x
+        self.train_y = train_y
+       
+        self.mean_module = ZeroMean()
+        self.base_covar_module = ScaleKernel(RBFKernel())
         self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
 
     def forward(self, x):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+    
+    def get_inducing_prior(self):
+        
+        Kmm = self.covar_module._inducing_mat
+        return torch.distributions.MultivariateNormal(ZeroMean(), Kmm)
+    
+    def elbo(self, output, y):
+        
+        Knn = model.base_covar_module(self.train_x).evaluate()
+        Knm = model.base_covar_module(self.train_x, self.Z_init).evaluate()
+        lhs = torch.matmul(Knm, self.covar_module._inducing_mat.inverse())
+        Qnn = torch.matmul(lhs, Knm.evaluate().T)
+        
+        shape = Knn.shape[:-1]
+        noise_diag = self.likelihood._shaped_noise_covar(shape).diag()
+        S = self.q_u.forward().covariance_matrix
+        Lambda = torch.matmul(lhs.T, lhs)
+        #p_y = model.likelihood(output)
+        p_y = torch.MultivariateNormal(lhs,noise_diag)
+        expected_log_lik = p_y.log_prob(y)
+        shape = Knn.shape[:-1]
+        diag_1 = Knn.diag() - Qnn.diag()
+        trace_term_1 = 0.5*(diag_1/noise_diag).sum() 
+        
+        diag_2 = torch.matmul(S, Lambda).diag()
+        trace_term_2 = 0.5*(diag_2/noise_diag).sum() 
+        kl_term = self.q_f.kl_divergence()
+        return expected_log_lik, trace_term_1, trace_term_2, kl_term
+            
+    def train_model(self, likelihood, minibatch_size=100, combine_terms=True):
+        
+        self.train()
+        likelihood.train()
+        mll = gpytorch.mlls.VariationalELBO(likelihood, model)
+        
+        losses = []
+        for i in range(1000):
+          optimizer.zero_grad()
+          output = self(self.train_x)
+          if combine_terms:
+              loss = -mll(output, self.train_y)
+          else:
+              loss = -self.elbo(output, self.train_y)
+          losses.append(loss)
+          loss.backward()
+          if i%100 == 0:
+                    print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+                    i + 1, 1000, loss.item(),
+                    self.covar_module.base_kernel.lengthscale.item(),
+                    likelihood.noise.item()))
+          optimizer.step()
+        return losses
+    
+    def optimization_trace(self):
+        return;
+        
+    def posterior_predictive(self, test_x):
+        
+        ''' Returns the posterior predictive multivariate normal '''
+        
+        self.eval()
+        self.likelihood.eval()
+
+        # Test points are regularly spaced along [0,1]
+        # Make predictions by feeding model through likelihood
+        with torch.no_grad(), gpytorch.settings.fast_pred_var():
+            y_star = likelihood(self(test_x))
+        return y_star
+    
+    def visualise_posterior(self, test_x, y_star):
+    
+        ''' Visualising posterior predictive '''
+        
+        f, ax = plt.subplots(1, 1, figsize=(8, 8))
+        lower, upper = y_star.confidence_region()
+        ax.plot(self.train_x.numpy(), self.train_y.numpy(), 'kx')
+        ax.plot(test_x.numpy(), y_star.mean.numpy(), 'b-')
+        ax.plot(self.inducing_points.detach(), [-2.5]*self.num_inducing, 'rx')
+        ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.5)
+        ax.set_ylim([-3, 3])
+        ax.legend(['Train', 'Mean', 'Inducing inputs', r'$\pm$2\sigma'])
+        plt.show()
+
+    def visualise_train(self):
+        
+        ''' Visualise training points '''
+        
+        plt.figure()
+        plt.plot(self.train_x, self.train_y, 'bx', label='Train')
+        plt.legend()
+
+    def get_trainable_param_names(self):
+        
+        ''' Prints a list of parameters (model + variational) which will be 
+        learnt in the process of optimising the objective '''
+        
+        table = PrettyTable(["Modules", "Parameters"])
+        total_params = 0
+        for name, parameter in self.named_parameters():
+            if not parameter.requires_grad: continue
+            param = parameter.numel()
+            table.add_row([name, param])
+            total_params+=param
+        print(table)
+        print(f"Total Trainable Params: {total_params}")
+        
+    def neg_test_log_likelihood(self, y_star, test_y):
+        
+         lpd = y_star.log_prob(test_y)
+         # return the average
+         return -torch.mean(lpd).detach()
+    
+    def rmse(self, y_star, test_y):
+        
+       return torch.sqrt(torch.mean((y_star.loc - test_y)**2)).detach()
 
 
 if __name__ == '__main__':
 
-X = torch.linspace(-5,5,1000)[:,None]
-y = torch.sin(X).flatten() + 0.4*torch.randn(len(X))
+    N = 1000  # Number of training observations
 
-train_n = int(floor(0.8 * len(X)))
-train_x = X[:train_n, :].contiguous()
-train_y = y[:train_n].contiguous()
+    X = torch.randn(N) * 2 - 1  # X values
+    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
 
-test_x = X[train_n:, :].contiguous()
-test_y = y[train_n:].contiguous()
+    train_n = int(floor(0.8 * len(X)))
+    train_x = X[:train_n][:,None]
+    train_y = Y[:train_n].contiguous()
     
-train_dataset = TensorDataset(train_x, train_y)
-train_loader = DataLoader(train_dataset, batch_size=1000, shuffle=True)
+    test_x = X[train_n:][:,None]
+    test_y = Y[train_n:].contiguous()
+        
+    train_dataset = TensorDataset(train_x, train_y)
+    train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+    
+    test_dataset = TensorDataset(test_x, test_y)
+    test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
+    
+    # Initial inducing points
+    Z_init = torch.randn(12)
+    
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    model = StochasticVariationalGP(train_x, train_y, likelihood, Z_init)
 
-test_dataset = TensorDataset(test_x, test_y)
-test_loader = DataLoader(test_dataset, batch_size=1000, shuffle=False)
+    model.train()
+    likelihood.train()
+    
+    optimizer = torch.optim.Adam([
+        {'params': model.parameters()}
+    ], lr=0.01)
+    
+    # Our loss object. We're using the VariationalELBO
+    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=train_y.size(0))
+    
+    # Test 
+    test_x = torch.linspace(-8, 8, 1000)
+    test_y = func(test_x)
+    
+    y_star = model.posterior_predictive(test_x)
+    
+    # Visualise 
+    
+    model.visualise_posterior(test_x, y_star)
+    
+    # Compute metrics
+    rmse = model.rmse(y_star, test_y)
+    nll = model.neg_test_log_likelihood(y_star, test_y)
+    
 
-inducing_points = train_x[:100, :]
-model = GPModel(inducing_points=inducing_points)
-likelihood = gpytorch.likelihoods.GaussianLikelihood()
-
-model.train()
-likelihood.train()
-
-optimizer = torch.optim.Adam([
-    {'params': model.parameters()},
-    {'params': likelihood.parameters()},
-], lr=0.01)
-
-# Our loss object. We're using the VariationalELBO
-mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=train_y.size(0))
-
-num_epochs = 100
-losses = []
-epochs_iter = tqdm.notebook.tqdm(range(num_epochs), desc="Epoch")
-for i in epochs_iter:
-    # Within each iteration, we will go over each minibatch of data
-    print('Finished 1 loop')
-    minibatch_iter = tqdm.notebook.tqdm(train_loader, desc="Minibatch", leave=True)
-    for x_batch, y_batch in minibatch_iter:
-        optimizer.zero_grad()
-        output = model(x_batch)
-        loss = -mll(output, y_batch)
-        losses.append(loss)
-        minibatch_iter.set_postfix(loss=loss.item())
-        loss.backward()
-        optimizer.step()
-
-model.eval()
-likelihood.eval()
-means = torch.tensor([0.])
-with torch.no_grad():
-    for x_batch, y_batch in train_loader:
-        preds = model(x_batch)
-        means = torch.cat([means, preds.mean.cpu()])
-means = means[1:]
-
-plt.figure()
-plt.plot(train_x, means, 'r-')
-plt.plot(train_x, train_y, 'bo')
+# num_epochs = 100
+ # losses = []
+ # epochs_iter = tqdm.notebook.tqdm(range(num_epochs), desc="Epoch")
+ # for i in epochs_iter:
+ #     # Within each iteration, we will go over each minibatch of data
+ #     print('Finished 1 loop')
+ #     minibatch_iter = tqdm.notebook.tqdm(train_loader, desc="Minibatch", leave=True)
+ #     for x_batch, y_batch in minibatch_iter:
+ #         optimizer.zero_grad()
+ #         output = model(x_batch)
+ #         loss = -mll(output, y_batch)
+ #         losses.append(loss)
+ #         minibatch_iter.set_postfix(loss=loss.item())
+ #         loss.backward()
+ #         optimizer.step()
+ 
+   
