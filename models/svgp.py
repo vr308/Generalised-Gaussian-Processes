@@ -45,7 +45,7 @@ class StochasticVariationalGP(ApproximateGP):
         self.mean_module = ZeroMean()
         self.base_covar_module = ScaleKernel(RBFKernel())
         self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-
+        
     def forward(self, x):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
@@ -68,7 +68,7 @@ class StochasticVariationalGP(ApproximateGP):
         S = self.q_u.forward().covariance_matrix
         Lambda = torch.matmul(lhs.T, lhs)
         #p_y = model.likelihood(output)
-        p_y = torch.MultivariateNormal(lhs,noise_diag)
+        p_y = gpytorch.torch.MultivariateNormal(lhs,noise_diag)
         expected_log_lik = p_y.log_prob(y)
         shape = Knn.shape[:-1]
         diag_1 = Knn.diag() - Qnn.diag()
@@ -79,28 +79,30 @@ class StochasticVariationalGP(ApproximateGP):
         kl_term = self.q_f.kl_divergence()
         return expected_log_lik, trace_term_1, trace_term_2, kl_term
             
-    def train_model(self, likelihood, minibatch_size=100, combine_terms=True):
+    def train_model(self, likelihood, optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True):
         
         self.train()
         likelihood.train()
-        mll = gpytorch.mlls.VariationalELBO(likelihood, model)
+        mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(self.train_y))
         
         losses = []
-        for i in range(1000):
-          optimizer.zero_grad()
-          output = self(self.train_x)
-          if combine_terms:
-              loss = -mll(output, self.train_y)
-          else:
-              loss = -self.elbo(output, self.train_y)
-          losses.append(loss)
-          loss.backward()
-          if i%100 == 0:
-                    print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
-                    i + 1, 1000, loss.item(),
-                    self.covar_module.base_kernel.lengthscale.item(),
-                    likelihood.noise.item()))
-          optimizer.step()
+        for i in range(num_epochs):
+            minibatch_iter = tqdm.notebook.tqdm(train_loader, desc="Minibatch", leave=True)
+            for x_batch, y_batch in minibatch_iter:
+                  optimizer.zero_grad()
+                  output = self(x_batch)
+                  if combine_terms:
+                      loss = -mll(output, y_batch)
+                  else:
+                      loss = -self.elbo(output, y_batch)
+                  losses.append(loss)
+                  loss.backward()
+                  if i%10 == 0:
+                            print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+                            i + 1, 1000, loss.item(),
+                            self.covar_module.base_kernel.lengthscale.item(),
+                            likelihood.noise.item()))
+                  optimizer.step()
         return losses
     
     def optimization_trace(self):
@@ -127,7 +129,7 @@ class StochasticVariationalGP(ApproximateGP):
         lower, upper = y_star.confidence_region()
         ax.plot(self.train_x.numpy(), self.train_y.numpy(), 'kx')
         ax.plot(test_x.numpy(), y_star.mean.numpy(), 'b-')
-        ax.plot(self.inducing_points.detach(), [-2.5]*self.num_inducing, 'rx')
+        ax.plot(self.inducing_inputs.detach(), [-2.5]*self.num_inducing, 'rx')
         ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.5)
         ax.set_ylim([-3, 3])
         ax.legend(['Train', 'Mean', 'Inducing inputs', r'$\pm$2\sigma'])
@@ -188,21 +190,17 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
     
     # Initial inducing points
-    Z_init = torch.randn(12)
+    Z_init = torch.randn(25)
     
     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     model = StochasticVariationalGP(train_x, train_y, likelihood, Z_init)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-    model.train()
-    likelihood.train()
-    
-    optimizer = torch.optim.Adam([
-        {'params': model.parameters()}
-    ], lr=0.01)
-    
-    # Our loss object. We're using the VariationalELBO
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=train_y.size(0))
-    
+
+    # Train
+    losses = model.train_model(likelihood, optimizer, train_loader, 
+                               minibatch_size=100, num_epochs=100,  combine_terms=True)
+
     # Test 
     test_x = torch.linspace(-8, 8, 1000)
     test_y = func(test_x)
@@ -218,7 +216,7 @@ if __name__ == '__main__':
     nll = model.neg_test_log_likelihood(y_star, test_y)
     
 
-# num_epochs = 100
+#  num_epochs = 100
  # losses = []
  # epochs_iter = tqdm.notebook.tqdm(range(num_epochs), desc="Epoch")
  # for i in epochs_iter:

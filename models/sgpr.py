@@ -61,7 +61,7 @@ class SparseGPR(gpytorch.models.ExactGP):
     
         return expected_log_lik, trace_term
             
-    def train_model(self, likelihood, combine_terms=True):
+    def train_model(self, likelihood, optimizer, combine_terms=True):
 
         self.train()
         likelihood.train()
@@ -168,7 +168,7 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
         
     # Train
-    losses = model.train_model(likelihood, combine_terms=True)
+    losses = model.train_model(likelihood, optimizer, combine_terms=True)
 
     # Test 
     test_x = torch.linspace(-8, 8, 1000)
@@ -208,13 +208,13 @@ if __name__ == '__main__':
 # l1 = torch.matmul(K_mm, W)
 # sigma = torch.matmul(l1, K_mm)
 
-sigma = model.optimal_q_u().covariance_matrix
+#sigma = model.optimal_q_u().covariance_matrix
 # Knn = model.base_covar_module(model.train_x).evaluate()
 # lhs = torch.matmul(K_nm, model.covar_module._inducing_mat.inverse())
 # Qnn = torch.matmul(lhs, K_nm.evaluate().T)
-K_ss = model.base_covar_module(train_x)
-lh = torch.matmul(K_nm, K_mm_inv)
-third_term = torch.matmul(torch.matmul(lh, sigma), lh.T)
+#K_ss = model.base_covar_module(test_x)
+#lh = torch.matmul(K_nm, K_mm_inv)
+#third_term = torch.matmul(torch.matmul(lh, sigma), lh.T)
 
-pred_covar = K_ss.evaluate() - torch.matmul(H, K_star_m.T) + third_term
+#pred_covar = K_ss.evaluate() - torch.matmul(H, K_star_m.T) + third_term
 
