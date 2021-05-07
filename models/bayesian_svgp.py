@@ -10,6 +10,7 @@ import torch as torch
 import numpy as np
 import tqdm
 from math import floor
+from tqdm import trange
 import matplotlib.pyplot as plt
 from prettytable import PrettyTable
 from gpytorch.models import ApproximateGP
@@ -25,13 +26,15 @@ from gpytorch.mlls.added_loss_term import AddedLossTerm
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
 
-class HyperVariationalDist(gpytorch.Module):
+class LogHyperVariationalDist(gpytorch.Module):
     
-     def __init__(self, hyper_dim, hyper_prior, data_dim):
+     def __init__(self, hyper_dim, hyper_prior, n, data_dim):
         super().__init__()
         
         self.hyper_dim = hyper_dim
         self.hyper_prior = hyper_prior
+        self.n = n
+        self.data_dim = data_dim
         # G: there might be some issues here if someone calls .cuda() on their BayesianGPLVM
         # after initializing on the CPU
 
@@ -44,7 +47,7 @@ class HyperVariationalDist(gpytorch.Module):
      def forward(self):
         # Variational distribution over the hyper variable q(x)
         q_theta = torch.distributions.Normal(self.q_mu, torch.nn.functional.softplus(self.q_log_sigma))
-        theta_kl = kl_gaussian_loss_term(q_theta, self.hyper_prior, self.hyper_dim)
+        theta_kl = kl_gaussian_loss_term(q_theta, self.hyper_prior, self.n, self.data_dim)
         self.update_added_loss_term('theta_kl', theta_kl)  # Update the KL term
         return q_theta.rsample()
     
@@ -79,6 +82,8 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         # regularly placed.
         self.inducing_inputs = Z_init
         self.num_inducing = len(Z_init)
+        self.n = len(train_y)
+        self.data_dim = train_x.shape[1]
         # Sparse Variational Formulation
         q_u = CholeskyVariationalDistribution(self.num_inducing) 
         q_f = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
@@ -91,50 +96,35 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         self.base_covar_module = ScaleKernel(RBFKernel())
         self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
         
-         # Register priors
-        
-        self.covar_module.base_kernel.register_prior("lengthscale_prior", UniformPrior(0.01, 0.5), "lengthscale")
+        # Register priors
+        #self.covar_module.base_kernel.register_prior("lengthscale_prior", UniformPrior(0.01, 0.5), "lengthscale")
 
         # Hyperparameter Variational distribution
-        prior_x = NormalPrior(X_prior_mean, torch.ones_like(X_prior_mean))
-        theta = HyperVariationalDist(n, data_dim, latent_dim, X_init, prior_x)
-        
+        hyper_prior_mean = torch.Tensor([0])
+        hyper_dim = len(hyper_prior_mean)
 
-    def forward(self, x, theta):
+        log_hyper_prior = NormalPrior(hyper_prior_mean, torch.ones_like(hyper_prior_mean))
+        self.log_theta = LogHyperVariationalDist(hyper_dim, log_hyper_prior, self.n, self.data_dim)
+        
+    def forward(self, x, log_theta=1.0):
         mean_x = self.mean_module(x)
-        covar_x = self.get_covar_at_theta(theta)
+        theta = torch.nn.functional.softplus(log_theta)
+        self.update_covar_module_at_theta(theta)
+        covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
     
-    def get_covar_at_theta(self, theta):
-        return
+    def update_covar_module_at_theta(self, theta):
+        self.covar_module.base_kernel.lengthscale = theta 
+        return self.covar_module
+    
+    def sample_variational_log_hyper(self):
         
+        return self.log_theta()
+    
     def get_inducing_prior(self):
         
         Kmm = self.covar_module._inducing_mat
         return torch.distributions.MultivariateNormal(ZeroMean(), Kmm)
-    
-    def elbo(self, output, y):
-        
-        Knn = model.base_covar_module(self.train_x).evaluate()
-        Knm = model.base_covar_module(self.train_x, self.Z_init).evaluate()
-        lhs = torch.matmul(Knm, self.covar_module._inducing_mat.inverse())
-        Qnn = torch.matmul(lhs, Knm.evaluate().T)
-        
-        shape = Knn.shape[:-1]
-        noise_diag = self.likelihood._shaped_noise_covar(shape).diag()
-        S = self.q_u.forward().covariance_matrix
-        Lambda = torch.matmul(lhs.T, lhs)
-        #p_y = model.likelihood(output)
-        p_y = gpytorch.torch.MultivariateNormal(lhs,noise_diag)
-        expected_log_lik = p_y.log_prob(y)
-        shape = Knn.shape[:-1]
-        diag_1 = Knn.diag() - Qnn.diag()
-        trace_term_1 = 0.5*(diag_1/noise_diag).sum() 
-        
-        diag_2 = torch.matmul(S, Lambda).diag()
-        trace_term_2 = 0.5*(diag_2/noise_diag).sum() 
-        kl_term = self.q_f.kl_divergence()
-        return expected_log_lik, trace_term_1, trace_term_2, kl_term
             
     def train_model(self, likelihood, optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True):
         
@@ -162,16 +152,42 @@ class BayesianStochasticVariationalGP(ApproximateGP):
                   optimizer.step()
         return losses
     
+    # def train_doubly_stochastic_model(self, likelihood, optimizer, train_loader, minibatch_size=100):
+        
+    #     self.train()
+    #     likelihood.train()
+    #     mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(self.train_y))
+        
+    #     losses = []
+    #     for i in range(num_epochs):
+    #         optimizer.zero_grad()
+    #         sample = model.sample_variational_hyper()
+    #         print('hyper_sample'+ str(sample))
+    #         output = model(sample)
+    #         print(model.covar_module.base_kernel.lengthscale)
+    #         loss = -mll(output, Y).sum()
+    #         loss_list.append(loss.item())
+    #         iterator.set_description('Loss: ' + str(float(np.round(loss.item(),2))) + ", iter no: " + str(i))
+    #         loss.backward()
+    #         optimizer.step()
+    
+    def _get_batch_idx(self, batch_size):
+           
+        valid_indices = np.arange(self.n)
+        batch_indices = np.random.choice(valid_indices, size=batch_size, replace=False)
+        return np.sort(batch_indices)
+    
     def optimization_trace(self):
         return;
         
-    def posterior_predictive(self, test_x):
+    def mixture_posterior_predictive(self, test_x):
         
         ''' Returns the posterior predictive multivariate normal '''
         
         self.eval()
         self.likelihood.eval()
 
+        
         # Test points are regularly spaced along [0,1]
         # Make predictions by feeding model through likelihood
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
@@ -249,14 +265,33 @@ if __name__ == '__main__':
     # Initial inducing points
     Z_init = torch.randn(25)
     
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    model = StochasticVariationalGP(train_x, train_y, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    likelihood = gpytorch.likelihoods.BernoulliLikelihood()
+    model = BayesianStochasticVariationalGP(train_x, train_y, likelihood, Z_init)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
 
 
     # Train
-    losses = model.train_model(likelihood, optimizer, train_loader, 
-                               minibatch_size=100, num_epochs=100,  combine_terms=True)
+    #losses = model.train_model(likelihood, optimizer, train_loader, 
+    #                          minibatch_size=100, num_epochs=100,  combine_terms=True)
+    
+    model.train()
+    likelihood.train()
+    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(train_y))
+    
+    losses = []
+    iterator = trange(5000, leave=True)
+    for i in iterator:
+        batch_index = model._get_batch_idx(batch_size=200)
+        optimizer.zero_grad()
+        log_hyper_sample = model.sample_variational_log_hyper()
+        #print('hyper_sample :' + str(log_hyper_sample))
+        output = model(train_x[batch_index], log_theta=log_hyper_sample)
+        #print(model.covar_module.base_kernel.lengthscale)
+        loss = -mll(output, train_y[batch_index]).sum()
+        losses.append(loss.item())
+        iterator.set_description('Loss: ' + str(float(np.round(loss.item(),2))) + ", iter no: " + str(i))
+        loss.backward()
+        optimizer.step()
 
     # Test 
     test_x = torch.linspace(-8, 8, 1000)
