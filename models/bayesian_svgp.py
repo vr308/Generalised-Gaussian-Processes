@@ -130,7 +130,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         
         self.train()
         likelihood.train()
-        mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(self.train_y))
+        mll = gpytorch.mlls.VariationalELBO(likelihood, self, num_data=len(self.train_y))
         
         losses = []
         for i in range(num_epochs):
@@ -145,7 +145,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
                   losses.append(loss)
                   loss.backward()
                   if i%10 == 0:
-                            print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+                            print('Iter %d/%d - Loss: %.3f  outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
                             i + 1, 1000, loss.item(),
                             self.covar_module.base_kernel.lengthscale.item(),
                             likelihood.noise.item()))
@@ -191,121 +191,74 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         # Test points are regularly spaced along [0,1]
         # Make predictions by feeding model through likelihood
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            y_star = likelihood(self(test_x))
+            y_star = self.likelihood(self(test_x))
         return y_star
     
-    def visualise_posterior(self, test_x, y_star):
+
+# if __name__ == '__main__':
+
+#     N = 1000  # Number of training observations
+
+#     X = torch.randn(N) * 2 - 1  # X values
+#     Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+
+#     train_n = int(floor(0.8 * len(X)))
+#     train_x = X[:train_n][:,None]
+#     train_y = Y[:train_n].contiguous()
     
-        ''' Visualising posterior predictive '''
+#     test_x = X[train_n:][:,None]
+#     test_y = Y[train_n:].contiguous()
         
-        f, ax = plt.subplots(1, 1, figsize=(8, 8))
-        lower, upper = y_star.confidence_region()
-        ax.plot(self.train_x.numpy(), self.train_y.numpy(), 'kx')
-        ax.plot(test_x.numpy(), y_star.mean.numpy(), 'b-')
-        ax.plot(self.inducing_inputs.detach(), [-2.5]*self.num_inducing, 'rx')
-        ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.5)
-        ax.set_ylim([-3, 3])
-        ax.legend(['Train', 'Mean', 'Inducing inputs', r'$\pm$2\sigma'])
-        plt.show()
-
-    def visualise_train(self):
-        
-        ''' Visualise training points '''
-        
-        plt.figure()
-        plt.plot(self.train_x, self.train_y, 'bx', label='Train')
-        plt.legend()
-
-    def get_trainable_param_names(self):
-        
-        ''' Prints a list of parameters (model + variational) which will be 
-        learnt in the process of optimising the objective '''
-        
-        table = PrettyTable(["Modules", "Parameters"])
-        total_params = 0
-        for name, parameter in self.named_parameters():
-            if not parameter.requires_grad: continue
-            param = parameter.numel()
-            table.add_row([name, param])
-            total_params+=param
-        print(table)
-        print(f"Total Trainable Params: {total_params}")
-        
-    def neg_test_log_likelihood(self, y_star, test_y):
-        
-         lpd = y_star.log_prob(test_y)
-         # return the average
-         return -torch.mean(lpd).detach()
+#     train_dataset = TensorDataset(train_x, train_y)
+#     train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
     
-    def rmse(self, y_star, test_y):
-        
-       return torch.sqrt(torch.mean((y_star.loc - test_y)**2)).detach()
+#     test_dataset = TensorDataset(test_x, test_y)
+#     test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
+    
+#     # Initial inducing points
+#     Z_init = torch.randn(25)
+    
+#     likelihood = gpytorch.likelihoods.BernoulliLikelihood()
+#     model = BayesianStochasticVariationalGP(train_x, train_y, likelihood, Z_init)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
 
 
-if __name__ == '__main__':
+#     # Train
+#     #losses = model.train_model(likelihood, optimizer, train_loader, 
+#     #                          minibatch_size=100, num_epochs=100,  combine_terms=True)
+    
+#     model.train()
+#     likelihood.train()
+#     mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(train_y))
+    
+#     losses = []
+#     iterator = trange(5000, leave=True)
+#     for i in iterator:
+#         batch_index = model._get_batch_idx(batch_size=200)
+#         optimizer.zero_grad()
+#         log_hyper_sample = model.sample_variational_log_hyper()
+#         #print('hyper_sample :' + str(log_hyper_sample))
+#         output = model(train_x[batch_index], log_theta=log_hyper_sample)
+#         #print(model.covar_module.base_kernel.lengthscale)
+#         loss = -mll(output, train_y[batch_index]).sum()
+#         losses.append(loss.item())
+#         iterator.set_description('Loss: ' + str(float(np.round(loss.item(),2))) + ", iter no: " + str(i))
+#         loss.backward()
+#         optimizer.step()
 
-    N = 1000  # Number of training observations
-
-    X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
-
-    train_n = int(floor(0.8 * len(X)))
-    train_x = X[:train_n][:,None]
-    train_y = Y[:train_n].contiguous()
+#     # Test 
+#     test_x = torch.linspace(-8, 8, 1000)
+#     test_y = func(test_x)
     
-    test_x = X[train_n:][:,None]
-    test_y = Y[train_n:].contiguous()
-        
-    train_dataset = TensorDataset(train_x, train_y)
-    train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+#     y_star = model.posterior_predictive(test_x)
     
-    test_dataset = TensorDataset(test_x, test_y)
-    test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
+#     # Visualise 
     
-    # Initial inducing points
-    Z_init = torch.randn(25)
+#     model.visualise_posterior(test_x, y_star)
     
-    likelihood = gpytorch.likelihoods.BernoulliLikelihood()
-    model = BayesianStochasticVariationalGP(train_x, train_y, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0005)
-
-
-    # Train
-    #losses = model.train_model(likelihood, optimizer, train_loader, 
-    #                          minibatch_size=100, num_epochs=100,  combine_terms=True)
-    
-    model.train()
-    likelihood.train()
-    mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(train_y))
-    
-    losses = []
-    iterator = trange(5000, leave=True)
-    for i in iterator:
-        batch_index = model._get_batch_idx(batch_size=200)
-        optimizer.zero_grad()
-        log_hyper_sample = model.sample_variational_log_hyper()
-        #print('hyper_sample :' + str(log_hyper_sample))
-        output = model(train_x[batch_index], log_theta=log_hyper_sample)
-        #print(model.covar_module.base_kernel.lengthscale)
-        loss = -mll(output, train_y[batch_index]).sum()
-        losses.append(loss.item())
-        iterator.set_description('Loss: ' + str(float(np.round(loss.item(),2))) + ", iter no: " + str(i))
-        loss.backward()
-        optimizer.step()
-
-    # Test 
-    test_x = torch.linspace(-8, 8, 1000)
-    test_y = func(test_x)
-    
-    y_star = model.posterior_predictive(test_x)
-    
-    # Visualise 
-    
-    model.visualise_posterior(test_x, y_star)
-    
-    # Compute metrics
-    rmse = model.rmse(y_star, test_y)
-    nll = model.neg_test_log_likelihood(y_star, test_y)
+#     # Compute metrics
+#     rmse = model.rmse(y_star, test_y)
+#     nll = model.neg_test_log_likelihood(y_star, test_y)
     
 
 #  num_epochs = 100

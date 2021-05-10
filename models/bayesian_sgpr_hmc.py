@@ -21,7 +21,7 @@ import pymc3 as pm
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
 
-class DoublyCollapsedSparseGPR(gpytorch.models.ExactGP):
+class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
     
    """ The sparse GP class for regression with the doubly 
         collapsed stochastic bound.
@@ -30,7 +30,7 @@ class DoublyCollapsedSparseGPR(gpytorch.models.ExactGP):
       
    def __init__(self, train_x, train_y, likelihood, Z_init):
         
-        super(DoublyCollapsedSparseGPR, self).__init__(train_x, train_y, likelihood)
+        super(BayesianSparseGPR_HMC, self).__init__(train_x, train_y, likelihood)
         self.train_x = train_x
         self.train_y = train_y
         self.inducing_points = Z_init
@@ -49,31 +49,7 @@ class DoublyCollapsedSparseGPR(gpytorch.models.ExactGP):
         for name, parameter in self.named_hyperparameters():
            if (name != 'covar_module.inducing_points'):
                parameter.requires_grad = False
-    
-   def elbo(self, output, y):
         
-        Knn = model.base_covar_module(self.train_x).evaluate()
-        Knm = model.base_covar_module(self.train_x, self.inducing_points).evaluate()
-        lhs = torch.matmul(Knm, self.covar_module._inducing_mat.inverse())
-        Qnn = torch.matmul(lhs, Knm.T)
-
-        shape = Knn.shape[:-1]
-        noise_covar = self.likelihood._shaped_noise_covar(shape).evaluate()
-        noise_diag = noise_covar.diag()
-
-        #p_y = gpytorch.distributions.MultivariateNormal(torch.Tensor([0]*len(self.train_x)), Qnn + noise_covar)
-        p_y = model.likelihood(output).log_prob(y)
-        expected_log_lik = p_y.log_prob(y)
-       
-        diag = Knn.diag() - Qnn.diag()
-        trace_term = 0.5*(diag/noise_diag).sum() 
-    
-        return expected_log_lik, trace_term
-    
-   def set_hyper_priors(self):
-       
-       self.covar_module.base_kernel.register_prior("lengthscale_prior", UniformPrior(0.01, 2), "lengthscale")
-
    def sample_optimal_variational_hyper_dist(self, n_samples, input_dim, Z_opt):
        
        with pm.Model() as model:
@@ -99,21 +75,18 @@ class DoublyCollapsedSparseGPR(gpytorch.models.ExactGP):
        mll.model.base_covar_module.outputscale = trace_hyper['sig_f'][-1]**2
        mll.model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][-1]
                
-   def train_model(self, likelihood, optimizer, combine_terms=True):
+   def train_model(self, likelihood, optimizer):
 
         self.train()
         likelihood.train()
-        mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+        elbo = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
              
         losses = []
         for i in range(1000):
           optimizer.zero_grad()
           output = self(self.train_x)
           self.freeze_kernel_hyperparameters()
-          if combine_terms:
-              loss = -mll(output, self.train_y)
-          else:
-              loss = -self.elbo(output, self.train_y)
+          loss = -elbo(output, self.train_y)
           losses.append(loss)
           loss.backward()
           if i%100 == 0:
