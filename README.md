@@ -2,8 +2,6 @@
 
 Fully Bayesian Inference in GPs - learning hyperparameter distributions with different likelihoods and inference techniques. This repo is a work in progress. 
 
-Reference (AABI 2019): https://arxiv.org/abs/1912.13440
-
 Likelihoods
 -------------
 
@@ -12,22 +10,31 @@ Likelihoods
 3) SoftMax (Multi-Class)
 4) Log Cox Posisson (Regression)
 
+Models
+-----------------
+
+1) SGPR (Titsias, 2009)
+2) SVGP (Hensman, 2013 / Hensman, 2015)
+3) BayesianSVGP (new)
+4) BayesianSGPR_HMC (new)
 
 Inference methods
 -----------------
 
 1) Hamiltonian Monte Carlo (pymc3)
-2) Variational Inference (ADVI) (pymc3)
-3) Stochastic Variational Inference (SVI) (gpytorch/pytorch)
-4) Elliptical Slice Sampling (pymc3)
-5) Dynamic Nested Sampling (pymc3)
+2) Stochastic Variational Inference (SVI) (gpytorch/pytorch)
+
+Future work (Summer, 2021)
+-------------------
+3) Elliptical Slice Sampling (pymc3)
+4) Dynamic Nested Sampling (pymc3)
 
 Code Layout
 -----------------
 
 Please set the working directory to the parent folder which containst the following sub-folders
 
-``` utils/ ``` - Data loading utilities, visualisation utilities.
+``` utils/ ``` - Data loading and visualisation utilities.
 
 ```experiments/``` - Scripts for running experiments and generating plots.
  
