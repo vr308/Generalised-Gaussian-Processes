@@ -97,12 +97,12 @@ class StochasticVariationalGP(ApproximateGP):
                       loss = -self.elbo(output, y_batch)
                   losses.append(loss)
                   loss.backward()
-                  if i%10 == 0:
+                  if i%5 == 0:
                             print('Iter %d/%d - Loss: %.3f  outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
                             i + 1, 1000, loss.item(),
                             self.base_covar_module.outputscale.item(),
                             self.covar_module.base_kernel.lengthscale.item(),
-                            likelihood.noise.item()))
+                            self.likelihood.noise.item()))
                   optimizer.step()
         return losses
     

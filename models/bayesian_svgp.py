@@ -5,6 +5,8 @@ Bayesian SVGP
 
 """
 
+#TODO: Mixture Posterior Predictive
+
 import gpytorch as gpytorch
 import torch as torch
 import numpy as np
@@ -35,8 +37,6 @@ class LogHyperVariationalDist(gpytorch.Module):
         self.hyper_prior = hyper_prior
         self.n = n
         self.data_dim = data_dim
-        # G: there might be some issues here if someone calls .cuda() on their BayesianGPLVM
-        # after initializing on the CPU
 
         # Global variational params
         self.q_mu = torch.nn.Parameter(torch.randn(hyper_dim))
@@ -96,9 +96,6 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         self.base_covar_module = ScaleKernel(RBFKernel())
         self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
         
-        # Register priors
-        #self.covar_module.base_kernel.register_prior("lengthscale_prior", UniformPrior(0.01, 0.5), "lengthscale")
-
         # Hyperparameter Variational distribution
         hyper_prior_mean = torch.Tensor([0])
         hyper_dim = len(hyper_prior_mean)
@@ -126,51 +123,33 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         Kmm = self.covar_module._inducing_mat
         return torch.distributions.MultivariateNormal(ZeroMean(), Kmm)
             
-    def train_model(self, likelihood, optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True):
+    def train_model(self, optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True):
         
         self.train()
-        likelihood.train()
-        mll = gpytorch.mlls.VariationalELBO(likelihood, self, num_data=len(self.train_y))
+        self.likelihood.train()
+        elbo = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=len(self.train_y))
         
         losses = []
-        for i in range(num_epochs):
-            minibatch_iter = tqdm.notebook.tqdm(train_loader, desc="Minibatch", leave=True)
-            for x_batch, y_batch in minibatch_iter:
-                  optimizer.zero_grad()
-                  output = self(x_batch)
-                  if combine_terms:
-                      loss = -mll(output, y_batch)
-                  else:
-                      loss = -self.elbo(output, y_batch)
-                  losses.append(loss)
-                  loss.backward()
-                  if i%10 == 0:
-                            print('Iter %d/%d - Loss: %.3f  outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
-                            i + 1, 1000, loss.item(),
-                            self.covar_module.base_kernel.lengthscale.item(),
-                            likelihood.noise.item()))
-                  optimizer.step()
+        iterator = trange(1000, leave=True)
+        for i in iterator:
+            batch_index = self._get_batch_idx(batch_size=200)
+            optimizer.zero_grad()
+            log_hyper_sample = self.sample_variational_log_hyper()
+            #print('hyper_sample :' + str(log_hyper_sample))
+            output = self(self.train_x[batch_index], log_theta=log_hyper_sample)
+            #print(self.covar_module.base_kernel.lengthscale)
+            loss = -elbo(output, self.train_y[batch_index]).sum()
+            losses.append(loss.item())
+            if i%100 == 0:
+                  print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
+                  i + 1, 1000, loss.item(),
+                  self.base_covar_module.outputscale.item(),
+                  self.base_covar_module.base_kernel.lengthscale.item(),
+                  self.likelihood.noise.item()))
+            loss.backward()
+            optimizer.step()
         return losses
-    
-    # def train_doubly_stochastic_model(self, likelihood, optimizer, train_loader, minibatch_size=100):
-        
-    #     self.train()
-    #     likelihood.train()
-    #     mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(self.train_y))
-        
-    #     losses = []
-    #     for i in range(num_epochs):
-    #         optimizer.zero_grad()
-    #         sample = model.sample_variational_hyper()
-    #         print('hyper_sample'+ str(sample))
-    #         output = model(sample)
-    #         print(model.covar_module.base_kernel.lengthscale)
-    #         loss = -mll(output, Y).sum()
-    #         loss_list.append(loss.item())
-    #         iterator.set_description('Loss: ' + str(float(np.round(loss.item(),2))) + ", iter no: " + str(i))
-    #         loss.backward()
-    #         optimizer.step()
-    
+
     def _get_batch_idx(self, batch_size):
            
         valid_indices = np.arange(self.n)
@@ -186,7 +165,6 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         
         self.eval()
         self.likelihood.eval()
-
         
         # Test points are regularly spaced along [0,1]
         # Make predictions by feeding model through likelihood
@@ -231,20 +209,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
 #     likelihood.train()
 #     mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=len(train_y))
     
-#     losses = []
-#     iterator = trange(5000, leave=True)
-#     for i in iterator:
-#         batch_index = model._get_batch_idx(batch_size=200)
-#         optimizer.zero_grad()
-#         log_hyper_sample = model.sample_variational_log_hyper()
-#         #print('hyper_sample :' + str(log_hyper_sample))
-#         output = model(train_x[batch_index], log_theta=log_hyper_sample)
-#         #print(model.covar_module.base_kernel.lengthscale)
-#         loss = -mll(output, train_y[batch_index]).sum()
-#         losses.append(loss.item())
-#         iterator.set_description('Loss: ' + str(float(np.round(loss.item(),2))) + ", iter no: " + str(i))
-#         loss.backward()
-#         optimizer.step()
+
 
 #     # Test 
 #     test_x = torch.linspace(-8, 8, 1000)
@@ -261,20 +226,5 @@ class BayesianStochasticVariationalGP(ApproximateGP):
 #     nll = model.neg_test_log_likelihood(y_star, test_y)
     
 
-#  num_epochs = 100
- # losses = []
- # epochs_iter = tqdm.notebook.tqdm(range(num_epochs), desc="Epoch")
- # for i in epochs_iter:
- #     # Within each iteration, we will go over each minibatch of data
- #     print('Finished 1 loop')
- #     minibatch_iter = tqdm.notebook.tqdm(train_loader, desc="Minibatch", leave=True)
- #     for x_batch, y_batch in minibatch_iter:
- #         optimizer.zero_grad()
- #         output = model(x_batch)
- #         loss = -mll(output, y_batch)
- #         losses.append(loss)
- #         minibatch_iter.set_postfix(loss=loss.item())
- #         loss.backward()
- #         optimizer.step()
- 
+
    

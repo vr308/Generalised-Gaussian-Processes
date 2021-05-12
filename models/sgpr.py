@@ -55,7 +55,7 @@ class SparseGPR(gpytorch.models.ExactGP):
     
         return expected_log_lik, trace_term
             
-    def train_model(self, likelihood, optimizer, combine_terms=True):
+    def train_model(self, optimizer, combine_terms=True):
 
         self.train()
         self.likelihood.train()
@@ -76,7 +76,7 @@ class SparseGPR(gpytorch.models.ExactGP):
                     i + 1, 1000, loss.item(),
                     self.base_covar_module.outputscale.item(),
                     self.base_covar_module.base_kernel.lengthscale.item(),
-                    likelihood.noise.item()))
+                    self.likelihood.noise.item()))
           optimizer.step()
         return losses
     

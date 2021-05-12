@@ -4,7 +4,8 @@
 Doubly collapsed SGPR with HMC
 
 """
-
+#TODO: Mixture Posterior Predictive
+#TODO: Only assigning lengthscale from hmc samples as a MWE (need to write a function to assign)
 
 import gpytorch 
 import torch
@@ -63,7 +64,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
             sig_n = pm.HalfCauchy("sig_n", beta=5)
             
             # Z_opt is the intermediate inducing points from the optimisation stage
-            y_ = gp.marginal_likelihood("y", X=self.train_x.numpy()[:,None], Xu=Z_opt, y=self.train_y.numpy(), noise=sig_n)
+            y_ = gp.marginal_likelihood("y", X=self.train_x.numpy(), Xu=Z_opt, y=self.train_y.numpy(), noise=sig_n)
         
             trace = pm.sample(n_samples, tune=500, chains=1)
         
@@ -75,27 +76,29 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
        mll.model.base_covar_module.outputscale = trace_hyper['sig_f'][-1]**2
        mll.model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][-1]
                
-   def train_model(self, likelihood, optimizer):
+   def train_model(self, optimizer):
 
         self.train()
-        likelihood.train()
-        elbo = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-             
+        self.likelihood.train()
+        elbo = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
+        
         losses = []
-        for i in range(1000):
+        for i in range(5000):
           optimizer.zero_grad()
           output = self(self.train_x)
           self.freeze_kernel_hyperparameters()
           loss = -elbo(output, self.train_y)
           losses.append(loss)
           loss.backward()
-          if i%100 == 0:
-                    print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
-                    i + 1, 1000, loss.item(),
+          if i%200 == 0:
+                    print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
+                    i + 1, 5000, loss.item(),
+                    self.base_covar_module.outputscale.item(),
                     self.base_covar_module.base_kernel.lengthscale.item(),
-                    likelihood.noise.item()))
-                    Z_opt = model.inducing_points.numpy()
-                    trace_hyper = self.sample_optimal_variational_hyper_dist(Z_opt)
+                    self.likelihood.noise.item()))
+                    Z_opt = self.inducing_points.numpy()[:,None]
+                    trace_hyper = self.sample_optimal_variational_hyper_dist(200, 1, Z_opt)  
+                    self.update_elbo_with_hyper_samples(elbo, trace_hyper)
           optimizer.step()
         return losses
                
@@ -112,99 +115,51 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         # Test points are regularly spaced along [0,1]
         # Make predictions by feeding model through likelihood
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            y_star = likelihood(self(test_x))
+            y_star = self.likelihood(self(test_x))
         return y_star
     
-   def visualise_posterior(self, test_x, y_star):
+# if __name__ == '__main__':
+
+#     N = 1000  # Number of training observations
+
+#     X = torch.randn(N) * 2 - 1  # X values
+#     Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+
+#     # Initial inducing points
+#     Z_init = torch.randn(12)
     
-        ''' Visualising posterior predictive '''
+#     # Initialise model and likelihood
+#     likelihood = gpytorch.likelihoods.GaussianLikelihood()
+#     model = BayesianSparseGPR_HMC(X[:,None], Y, likelihood, Z_init)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
         
-        f, ax = plt.subplots(1, 1, figsize=(8, 8))
-        lower, upper = y_star.confidence_region()
-        ax.plot(self.train_x.numpy(), self.train_y.numpy(), 'kx')
-        ax.plot(test_x.numpy(), y_star.mean.numpy(), 'b-')
-        ax.plot(self.covar_module.inducing_points.detach(), [-2.5]*self.num_inducing, 'rx')
-        ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.5)
-        ax.set_ylim([-3, 3])
-        ax.legend(['Train', 'Mean', 'Inducing inputs', r'$\pm$2\sigma'])
-        plt.show()
-
-   def visualise_train(self):
-        
-        ''' Visualise training points '''
-        
-        plt.figure()
-        plt.plot(self.train_x, self.train_y, 'bx', label='Train')
-        plt.legend()
-
-   def get_trainable_param_names(self):
-        
-        ''' Prints a list of parameters (model + variational) which will be 
-        learnt in the process of optimising the objective '''
-        
-        table = PrettyTable(["Modules", "Parameters"])
-        total_params = 0
-        for name, parameter in self.named_parameters():
-            if not parameter.requires_grad: continue
-            param = parameter.numel()
-            table.add_row([name, param])
-            total_params+=param
-        print(table)
-        print(f"Total Trainable Params: {total_params}")
-        
-   def neg_test_log_likelihood(self, y_star, test_y):
-        
-         lpd = y_star.log_prob(test_y)
-         # return the average
-         return -torch.mean(lpd).detach()
+#     # Train
+#     #losses = model.train_model(likelihood, optimizer, combine_terms=True)
     
-   def rmse(self, y_star, test_y):
-        
-       return torch.sqrt(torch.mean((y_star.loc - test_y)**2)).detach()
-
-
-if __name__ == '__main__':
-
-    N = 1000  # Number of training observations
-
-    X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
-
-    # Initial inducing points
-    Z_init = torch.randn(12)
-    
-    # Initialise model and likelihood
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    model = DoublyCollapsedSparseGPR(X, Y, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
-        
-    # Train
-    #losses = model.train_model(likelihood, optimizer, combine_terms=True)
-    
-    model.train()
-    likelihood.train()
-    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+#     model.train()
+#     likelihood.train()
+#     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
       
-    #model.set_hyper_priors()
+#     #model.set_hyper_priors()
             
-    losses = []
-    for i in range(5000):
-      optimizer.zero_grad()
-      output = model(model.train_x)
-      model.freeze_kernel_hyperparameters()
-      loss = -mll(output, model.train_y)
-      losses.append(loss)
-      loss.backward()
-      if i%200 == 0:
-                print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
-                i + 1, 5000, loss.item(),
-                model.base_covar_module.base_kernel.lengthscale.item(),
-                likelihood.noise.item()))
-                Z_opt = model.inducing_points.numpy()[:,None]
-                trace_hyper = model.sample_optimal_variational_hyper_dist(200, 1, Z_opt)  
-                model.update_elbo_with_hyper_samples(mll, trace_hyper)
-      optimizer.step()
-    #return losses
+#     losses = []
+#     for i in range(5000):
+#       optimizer.zero_grad()
+#       output = model(model.train_x)
+#       model.freeze_kernel_hyperparameters()
+#       loss = -mll(output, model.train_y)
+#       losses.append(loss)
+#       loss.backward()
+#       if i%200 == 0:
+#                 print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+#                 i + 1, 5000, loss.item(),
+#                 model.base_covar_module.base_kernel.lengthscale.item(),
+#                 likelihood.noise.item()))
+#                 Z_opt = model.inducing_points.numpy()[:,None]
+#                 trace_hyper = model.sample_optimal_variational_hyper_dist(200, 1, Z_opt)  
+#                 model.update_elbo_with_hyper_samples(mll, trace_hyper)
+#       optimizer.step()
+#     #return losses
 
 
     # Test 
