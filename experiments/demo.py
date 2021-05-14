@@ -54,22 +54,22 @@ if __name__ == '__main__':
     # Initial inducing points
     Z_init = torch.randn(25)
     
-    for m in range(len(model_list)): 
-        
-        print('Training with model ' + f'{model_list[m]}')
-        
-        # Initialise model and likelihood
-        model_class = model_list[m]
-        
-        likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        model = model_class(X[:,None], Y, likelihood, Z_init)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-
-        if titles[m][-4:] == 'SVGP':
-            losses = model.train_model(optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True)     
-        else:
-            losses = model.train_model(optimizer)
+    #for m in range(len(model_list)): 
+    m = 3    
+    print('Training with model ' + f'{model_list[m]}')
     
+    # Initialise model and likelihood
+    model_class = model_list[m]
+    
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    model = model_class(X[:,None], Y, likelihood, Z_init)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+    if titles[m][-4:] == 'SVGP':
+        losses = model.train_model(optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True)     
+    else:
+        losses = model.train_model(optimizer)
+
         # Test 
         #test_x = torch.linspace(-8, 8, 1000)
         #test_y = func(test_x)

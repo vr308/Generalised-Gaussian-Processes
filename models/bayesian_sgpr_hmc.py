@@ -70,11 +70,11 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         
        return trace
    
-   def update_elbo_with_hyper_samples(self, mll, trace_hyper):
+   def update_elbo_with_hyper_samples(self, elbo, trace_hyper):
        
-       mll.likelihood.noise_covar.noise = trace_hyper['sig_n'][-1]**2
-       mll.model.base_covar_module.outputscale = trace_hyper['sig_f'][-1]**2
-       mll.model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][-1]
+       elbo.likelihood.noise_covar.noise = trace_hyper['sig_n'][-1]**2
+       elbo.model.base_covar_module.outputscale = trace_hyper['sig_f'][-1]**2
+       elbo.model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][-1]
                
    def train_model(self, optimizer):
 
@@ -83,16 +83,17 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         elbo = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
         
         losses = []
-        for i in range(5000):
+        for i in range(1000):
           optimizer.zero_grad()
           output = self(self.train_x)
           self.freeze_kernel_hyperparameters()
+          #print(elbo.model.base_covar_module.base_kernel.lengthscale)
           loss = -elbo(output, self.train_y)
           losses.append(loss)
           loss.backward()
-          if i%200 == 0:
+          if i%100 == 0:
                     print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
-                    i + 1, 5000, loss.item(),
+                    i + 1, 1000, loss.item(),
                     self.base_covar_module.outputscale.item(),
                     self.base_covar_module.base_kernel.lengthscale.item(),
                     self.likelihood.noise.item()))
@@ -100,6 +101,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                     trace_hyper = self.sample_optimal_variational_hyper_dist(200, 1, Z_opt)  
                     self.update_elbo_with_hyper_samples(elbo, trace_hyper)
           optimizer.step()
+          #print(elbo.model.base_covar_module.base_kernel.lengthscale)
         return losses
                
    def optimal_q_u(self):
