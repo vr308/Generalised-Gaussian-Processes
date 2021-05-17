@@ -107,7 +107,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
    def optimal_q_u(self):
        return self(self.covar_module.inducing_points)
     
-   def posterior_predictive(self, test_x):
+   def mixture_posterior_predictive(self, test_x):
         
         ''' Returns the posterior predictive multivariate normal '''
         
