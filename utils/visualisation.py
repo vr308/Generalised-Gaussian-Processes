@@ -14,7 +14,7 @@ def visualise_posterior(model, test_x, y_star):
     
     f, ax = plt.subplots(1, 1, figsize=(8, 8))
     lower, upper = y_star.confidence_region()
-    ax.plot(model.train_x.numpy(), model.train_y.numpy(), 'kx')
+    ax.plot(model.train_x.numpy(), model.train_y.numpy(), 'kx', alpha=0.3)
     ax.plot(test_x.numpy(), y_star.mean.numpy(), 'b-')
     ax.plot(model.covar_module.inducing_points.detach(), [-2.5]*model.num_inducing, 'rx')
     ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.5)

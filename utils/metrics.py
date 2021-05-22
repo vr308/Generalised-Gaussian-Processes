@@ -7,6 +7,8 @@ Utilities for computation of metrics
 
 import torch 
 from prettytable import PrettyTable
+import numpy as np
+import scipy.stats as st
 
 def get_trainable_param_names(model):
     
@@ -30,6 +32,22 @@ def neg_test_log_likelihood(model, y_star, test_y):
       # return the average
       return -torch.mean(lpd).detach()
  
-def rmse(model, y_star, test_y):
+def rmse(y_star, test_y):
      
       return torch.sqrt(torch.mean((y_star.loc - test_y)**2)).detach()
+  
+def posterior_predictive_samples(post_mean, post_cov):
+    
+    return np.random.multivariate_normal(post_mean, post_cov, 20)
+
+
+def log_predictive_density(predictive_density):
+
+      return np.round(np.sum(np.log(predictive_density)), 3)
+
+def log_predictive_mixture_density(f_star, list_means, list_cov):
+      
+      components = []
+      for i in np.arange(len(list_means)):
+            components.append(st.multivariate_normal.pdf(f_star, list_means[i].eval(), list_cov[i].eval(), allow_singular=True))
+      return np.round(np.sum(np.log(np.mean(components))),3)

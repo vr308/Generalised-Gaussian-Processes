@@ -55,7 +55,7 @@ if __name__ == '__main__':
     Z_init = torch.randn(25)
     
     #for m in range(len(model_list)): 
-    m = 3    
+    m = 0
     print('Training with model ' + f'{model_list[m]}')
     
     # Initialise model and likelihood
@@ -66,21 +66,30 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
     if titles[m][-4:] == 'SVGP':
-        losses = model.train_model(optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True)     
+        losses = model.train_model(optimizer, train_loader, minibatch_size=100, num_epochs=50, combine_terms=True)     
     else:
         losses = model.train_model(optimizer)
 
-        # Test 
-        #test_x = torch.linspace(-8, 8, 1000)
-        #test_y = func(test_x)
-        
-        #y_star = model.posterior_predictive(test_x)
-        
-        # Visualise 
-        
-        #titles[m]
-        #visualise_posterior(model, test_x, y_star, title)
-        
-        # Compute metrics
-        #rmse = rmse(model, y_star, test_y)
-        #nll = neg_test_log_likelihood(model, y_star, test_y)
+    # #Test 
+    test_x = torch.linspace(-8, 8, 1000)
+    test_y = func(test_x)
+    
+    # y_star = model.mixture_posterior_predictive(test_x, trace_hyper)
+    
+    # #Visualise 
+    
+    # #plt.figure()
+    # for y_star in list_of_y_pred_dists[::5]:
+    #     ax.plot(test_x.numpy(), y_star.mean.numpy(), 'g-', alpha=0.2)
+    #     lower, upper = y_star.confidence_region()
+    #     ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.1, color='blue')
+
+    
+    
+    
+    title = titles[m]
+    visualise_posterior(model, test_x, y_star)
+    
+    #Compute metrics
+    rmse = rmse(model, y_star, test_y)
+    nll = neg_test_log_likelihood(model, y_star, test_y)
