@@ -12,6 +12,7 @@ import numpy as np
 import gpytorch
 import torch
 from torch.utils.data import TensorDataset, DataLoader
+from utils.posterior_predictive import *
 
 # Models
 from models.sgpr import SparseGPR
@@ -23,16 +24,15 @@ from models.bayesian_sgpr_hmc import BayesianSparseGPR_HMC
 from utils.metrics import *
 from utils.visualisation import *
 
-gpytorch.settings.cholesky_jitter(float=1e-5)
+gpytorch.settings.cholesky_jitter(float=1e-4)
+plt.style.use('seaborn-muted')
 
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 3.14) 
 
-titles = ['SparseGPR', 'SVGP', 'BayesianSVGP', 'BayesianSGPR_HMC']
+titles = ['SparseGPR', 'BayesianSGPR_HMC']
 model_list = [
             SparseGPR,
-            StochasticVariationalGP,
-            BayesianStochasticVariationalGP,
             BayesianSparseGPR_HMC
         ]
 
@@ -41,55 +41,113 @@ if __name__ == '__main__':
     torch.manual_seed(57)
     
     N = 1000  # Number of training observations
-
+    
     X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+    Y = func(X) + 0.4 * torch.randn(N)  # Noisy Y values
     
-    train_dataset = TensorDataset(X, Y)
-    train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+    train_index = np.where((X < -2) | (X > 2))
     
-    test_dataset = TensorDataset(X, Y)
-    test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
-            
+    X_train = X[train_index][:,None]
+    Y_train = Y[train_index]
+    
+    ## Test 
+    X_test = torch.linspace(-8, 8, 1000)
+    Y_test = func(X_test)
+
+    #plt.plot(X_train, Y_train, 'ko')
+               
     # Initial inducing points
-    Z_init = torch.randn(25)
+    Z_init = torch.randn(20)
     
-    #for m in range(len(model_list)): 
-    m = 0
-    print('Training with model ' + f'{model_list[m]}')
+    losses_dict = {}
+    model_dict =  {}
     
-    # Initialise model and likelihood
-    model_class = model_list[m]
+    for m in range(len(model_list)): 
+        print('Training with model ' + f'{model_list[m]}')
+        
+        # Initialise model and likelihood
+        model_class = model_list[m]
+        
+        likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        model = model_class(X_train, Y_train, likelihood, Z_init)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    model = model_class(X[:,None], Y, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        if titles[m][-4:] == 'SVGP':
+            losses = model.train_model(optimizer, train_loader, minibatch_size=100, num_epochs=50, combine_terms=True)     
+        else:
+            if titles[m][-3:] == 'HMC':
+                losses, trace_hyper = model.train_model(optimizer)
+                Y_test_pred_list = model.mixture_posterior_predictive(X_test, trace_hyper)
 
-    if titles[m][-4:] == 'SVGP':
-        losses = model.train_model(optimizer, train_loader, minibatch_size=100, num_epochs=50, combine_terms=True)     
-    else:
-        losses = model.train_model(optimizer)
-
-    # #Test 
-    test_x = torch.linspace(-8, 8, 1000)
-    test_y = func(test_x)
+            else:
+                losses = model.train_model(optimizer)
+                Y_test_pred = model.posterior_predictive(X_test)
+                 
+        # save losses
+        losses_dict[titles[m]] = losses
+        model_dict[titles[m]] = model
+       
     
-    # y_star = model.mixture_posterior_predictive(test_x, trace_hyper)
+    # Visualisation of synthetic example 
     
-    # #Visualise 
+    import matplotlib.pyplot as plt
+    plt.style.use('seaborn')
     
-    # #plt.figure()
-    # for y_star in list_of_y_pred_dists[::5]:
-    #     ax.plot(test_x.numpy(), y_star.mean.numpy(), 'g-', alpha=0.2)
-    #     lower, upper = y_star.confidence_region()
-    #     ax.fill_between(test_x.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.1, color='blue')
-
+    plt.figure(figsize=(14,4))
     
+    # SGPR 
+    plt.subplot(131)
+    visualise_posterior(model_dict['SparseGPR'], X_test, Y_test, Y_test_pred, mixture=False, title='SGPR', new_fig=False)
     
+    # SGPR w HMC
     
-    title = titles[m]
-    visualise_posterior(model, test_x, y_star)
+    plt.subplot(132)
+    visualise_posterior(model_dict['BayesianSGPR_HMC'], X_test, Y_test, Y_test_pred_list, mixture=True, title='SGPR + HMC', new_fig=False)
+  
+    plt.subplot(133)
+    plt.plot(losses_dict['SparseGPR'], label='SGPR')
+    plt.plot(losses_dict['BayesianSGPR_HMC'], label='SGPR + HMC')
+    plt.title('Neg. ELBO Loss')
+    plt.legend(fontsize='small')
     
+    plt.figure(figsize=(14,4))
+    
+    # Samples
+    
+    sgpr = model_dict['SparseGPR']
+    hmc = model_dict['BayesianSGPR_HMC']
+    
+    plt.subplot(131)
+    visualise_mixture_posterior_samples(hmc, X_test, Y_test_pred_list, title='GP Mixture Samples', new_fig=False)
+    plt.title('SGPR + HMC')
+    
+    plt.subplot(132)
+    plt.hist(trace_hyper['ls'], bins=25)
+    plt.axvline(sgpr.base_covar_module.base_kernel.lengthscale, color='r', label='ML-II')
+    plt.title('Lengthscale identification', fontsize='medium')
+    plt.legend()
+    
+    plt.subplot(133)
+    plt.hist(trace_hyper['sig_n'], bins=25)
+    plt.axvline(sgpr.base_covar_module.base_kernel.lengthscale, color='r', label='ML-II')
+    plt.axvline(x=0.4, label='Truth', c='k', linestyle='--')
+    plt.title('Noise sd identification', fontsize='medium')
+    plt.legend()
+ 
+    import pickle as pkl
+    
+    with open('pre_trained_models/hmc.pkl', 'wb') as file:
+        pkl.dump((hmc.state_dict(), likelihood.state_dict()), file)
+        
+        
+        
+        
     #Compute metrics
-    rmse = rmse(model, y_star, test_y)
+    sample_means, sample_stds = get_posterior_predictive_means_stds(Y_test_pred_list)
+    rmse_sgpr = rmse(Y_test_pred.loc, Y_test)
+    rmse_sgpr_hmc = rmse(get_posterior_predictive_mean(sample_means), Y_test)
+    
+    print('RMSE SGPR ' + str(rmse_sgpr))
+    print('RMSE SGPR HMC ' + str(rmse_sgpr_hmc))
+
     nll = neg_test_log_likelihood(model, y_star, test_y)

@@ -92,7 +92,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
           loss = -elbo(output, self.train_y)
           losses.append(loss)
           loss.backward()
-          if i%100 == 0:
+          if i%200 == 0:
                     print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
                     i + 1, 1000, loss.item(),
                     self.base_covar_module.outputscale.item(),
@@ -128,32 +128,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                 list_of_y_pred_dists.append(self.likelihood(self(test_x)))
         
         return list_of_y_pred_dists
-    
-   def get_posterior_predictive_mean(sample_means):
-        return np.average(sample_means, axis=0)
-
-
-   def compute_log_marginal_likelihood(K_noise, y):
-        return np.log(st.multivariate_normal.pdf(y, cov=K_noise.eval()))
-    
-    
-   def get_posterior_predictive_uncertainty_intervals(sample_means, sample_stds):
-        # Fixed at 95% CI
-    
-        n_test = sample_means.shape[-1]
-        components = sample_means.shape[0]
-        lower_ = []
-        upper_ = []
-        for i in np.arange(n_test):
-            print(i)
-            mix_idx = np.random.choice(np.arange(components), size=2000, replace=True)
-            mixture_draws = np.array(
-                [st.norm.rvs(loc=sample_means.iloc[j, i], scale=sample_stds.iloc[j, i]) for j in mix_idx])
-            lower, upper = st.scoreatpercentile(mixture_draws, per=[2.5, 97.5])
-            lower_.append(lower)
-            upper_.append(upper)
-        return np.array(lower_), np.array(upper_)
-    
+       
 # if __name__ == '__main__':
 
 #     N = 1000  # Number of training observations

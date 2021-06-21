@@ -26,20 +26,19 @@ def get_trainable_param_names(model):
     print(f"Total Trainable Params: {total_params}")
         
 
-def neg_test_log_likelihood(model, y_star, test_y):
+def neg_test_log_likelihood(model, Y_test_pred, Y_test):
      
-      lpd = y_star.log_prob(test_y)
+      lpd = Y_test_pred.log_prob(Y_test)
       # return the average
       return -torch.mean(lpd).detach()
  
-def rmse(y_star, test_y):
+def rmse(Y_pred_mean, Y_test):
      
-      return torch.sqrt(torch.mean((y_star.loc - test_y)**2)).detach()
+      return torch.sqrt(torch.mean((Y_pred_mean - Y_test)**2)).detach()
   
 def posterior_predictive_samples(post_mean, post_cov):
     
     return np.random.multivariate_normal(post_mean, post_cov, 20)
-
 
 def log_predictive_density(predictive_density):
 
@@ -50,4 +49,4 @@ def log_predictive_mixture_density(f_star, list_means, list_cov):
       components = []
       for i in np.arange(len(list_means)):
             components.append(st.multivariate_normal.pdf(f_star, list_means[i].eval(), list_cov[i].eval(), allow_singular=True))
-      return np.round(np.sum(np.log(np.mean(components))),3)
+      return -np.round(np.sum(np.log(np.mean(components))),3)
