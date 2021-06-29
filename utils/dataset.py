@@ -19,10 +19,6 @@ import numpy as np
 import os
 import pandas
 import logging
-from datetime import datetime
-from scipy.io import loadmat
-import pickle
-import shutil
 
 from urllib.request import urlopen
 logging.getLogger().setLevel(logging.INFO)
@@ -125,7 +121,7 @@ class Boston(Dataset):
     def read_data(self):
         data = pandas.read_fwf(self.datapath, header=None).values
         return data[:, :-1], data[:, -1].reshape(-1, 1)
-    
+
 @add_regression
 class Concrete(Dataset):
     N, D, name = 1030, 8, 'concrete'
@@ -224,7 +220,7 @@ class Yacht(Dataset):
     def read_data(self):
         data = pandas.read_fwf(self.datapath, header=None).values[:-1, :]
         return data[:, :-1], data[:, -1].reshape(-1, 1)
-    
+
 ##########################
 
 class Classification(Dataset):
@@ -394,7 +390,7 @@ for name, N, D, K in classification_datasets:
     @add_classficiation
     class C(Classification):
         name, N, D, K = name, N, D, K
-    
+
 ##########################
 
 regression_datasets = list(_ALL_REGRESSION_DATATSETS.keys())
@@ -416,4 +412,3 @@ def get_classification_data(name, *args, **kwargs):
 #data = get_regression_data('boston')
 #data = get_classification_data('yeast')
 
- 

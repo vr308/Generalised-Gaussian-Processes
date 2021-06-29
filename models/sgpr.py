@@ -1,42 +1,45 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-SGPR (Titsias, 2009)
+SGPR
+Reference: Michalis Titsias 2009, Sparse Gaussian processes using inducing points.
 
 """
 
 #TODO: Collect optimisation trace
+#TODO: Implement re-starts within the class
 
-import gpytorch 
+import gpytorch
 import torch
 from gpytorch.means import ZeroMean
 from gpytorch.kernels import ScaleKernel, RBFKernel, InducingPointKernel
 from gpytorch.distributions import MultivariateNormal
+from utils.metrics import get_trainable_param_names
 
 class SparseGPR(gpytorch.models.ExactGP):
-    
+
     def __init__(self, train_x, train_y, likelihood, Z_init):
-        
+
         """The sparse GP class for regression with the collapsed bound.
-           q*(u) is implicit. 
+           q*(u) is implicit.
         """
         super(SparseGPR, self).__init__(train_x, train_y, likelihood)
         self.train_x = train_x
         self.train_y = train_y
         self.inducing_points = Z_init
-        self.num_inducing = len(Z_init)   
-        self.likelihood = likelihood                                                                                          
+        self.num_inducing = len(Z_init)
+        self.likelihood = likelihood
         self.mean_module = ZeroMean()
         self.base_covar_module = ScaleKernel(RBFKernel())
         self.covar_module = InducingPointKernel(self.base_covar_module, inducing_points=Z_init, likelihood=self.likelihood)
 
-    def forward(self, x): 
+    def forward(self, x):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
         return MultivariateNormal(mean_x, covar_x)
-    
+
     def elbo(self, output, y):
-        
+
         Knn = self.base_covar_module(self.train_x).evaluate()
         Knm = self.base_covar_module(self.train_x, self.inducing_points).evaluate()
         lhs = self.matmul(Knm, self.covar_module._inducing_mat.inverse())
@@ -49,47 +52,64 @@ class SparseGPR(gpytorch.models.ExactGP):
         #p_y = gpytorch.distributions.MultivariateNormal(torch.Tensor([0]*len(self.train_x)), Qnn + noise_covar)
         p_y = self.likelihood(output).log_prob(y)
         expected_log_lik = p_y.log_prob(y)
-       
+
         diag = Knn.diag() - Qnn.diag()
-        trace_term = 0.5*(diag/noise_diag).sum() 
-    
+        trace_term = 0.5*(diag/noise_diag).sum()
+
         return expected_log_lik, trace_term
-            
-    def train_model(self, optimizer, combine_terms=True):
+
+    def initialise_parameters(self):
+        return
+
+    @staticmethod
+    def optimization_trace(trace_states, states, grad_params):
+        trace_states.append({param_name: param.numpy() for param_name, param in states.items() if param_name in grad_params})
+        return trace_states
+
+
+    def train_model(self, optimizer, combine_terms=True, n_restarts=10, num_steps=1000):
 
         self.train()
         self.likelihood.train()
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
 
-        losses = []
-        for i in range(1000):
-          optimizer.zero_grad()
-          output = self(self.train_x)
-          if combine_terms:
-              loss = -mll(output, self.train_y)
-          else:
-              loss = -self.elbo(output, self.train_y)
-          losses.append(loss)
-          loss.backward()
-          if i%100 == 0:
-                    print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
-                    i + 1, 1000, loss.item(),
-                    self.base_covar_module.outputscale.item(),
-                    self.base_covar_module.base_kernel.lengthscale.item(),
-                    self.likelihood.noise.item()))
-          optimizer.step()
-        return losses
-    
-    def optimization_trace(self):
-        return;
-        
+        grad_params = get_trainable_param_names(self)
+
+        trace_states = []
+        losses = torch.zeros(n_restarts, num_steps)
+        for i in range(n_restarts):
+
+            ## re-initialise model
+
+            for j in range(num_steps):
+              optimizer.zero_grad()
+              output = self(self.train_x)
+              if combine_terms:
+                  loss = -mll(output, self.train_y)
+              else:
+                  loss = -self.elbo(output, self.train_y)
+              losses[i, j] = loss.item()
+              loss.backward()
+              if j%100 == 0:
+                        print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
+                        j + 1, 1000, loss.item(),
+                        self.base_covar_module.outputscale.item(),
+                        self.base_covar_module.base_kernel.lengthscale.item(),
+                        self.likelihood.noise.item()))
+              optimizer.step()
+              states = self.state_dict().copy()
+              trace_states = SparseGPR.optimization_trace(trace_states, states, grad_params)
+            #hyper_trace_dict_i = {param_name: param for param_name, param in model_states[i] if 'covar_module' in param_name}
+        return losses, trace_states
+
+
     def optimal_q_u(self):
        return self(self.covar_module.inducing_points)
-    
+
     def posterior_predictive(self, test_x):
-        
+
         ''' Returns the posterior predictive multivariate normal '''
-        
+
         self.eval()
         self.likelihood.eval()
 
@@ -98,7 +118,7 @@ class SparseGPR(gpytorch.models.ExactGP):
         with torch.no_grad():
             y_star = self.likelihood(self(test_x))
         return y_star
-     
+
 # Verify: elbo, q*(u), p(f*|y)
 
 # # q*(u) - mean
