@@ -6,6 +6,7 @@ Bayesian SVGP
 """
 
 #TODO: Mixture Posterior Predictive
+#TODO: Register prior for q(\theta)
 
 import gpytorch as gpytorch
 import torch as torch
@@ -44,12 +45,12 @@ class LogHyperVariationalDist(gpytorch.Module):
         # This will add the KL divergence KL(q(theta) || p(theta)) to the loss
         self.register_added_loss_term("theta_kl")
 
-     def forward(self):
+     def forward(self, num_samples):
         # Variational distribution over the hyper variable q(x)
         q_theta = torch.distributions.Normal(self.q_mu, torch.nn.functional.softplus(self.q_log_sigma))
         theta_kl = kl_gaussian_loss_term(q_theta, self.hyper_prior, self.n, self.data_dim)
         self.update_added_loss_term('theta_kl', theta_kl)  # Update the KL term
-        return q_theta.rsample()
+        return q_theta.rsample(sample_shape=torch.Size([num_samples]))
     
 class kl_gaussian_loss_term(AddedLossTerm):
     
@@ -88,19 +89,24 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         q_u = CholeskyVariationalDistribution(self.num_inducing) 
         q_f = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
         super(BayesianStochasticVariationalGP, self).__init__(q_f)
+        
         self.likelihood = likelihood
         self.train_x = train_x
         self.train_y = train_y
        
         self.mean_module = ZeroMean()
-        self.base_covar_module = ScaleKernel(RBFKernel())
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=train_x.shape[-1]))
         
-        # Hyperparameter Variational distribution
-        hyper_prior_mean = torch.Tensor([0])
-        hyper_dim = len(hyper_prior_mean)
+        self.covar_module.raw_outputscale.register_prior(NormalPrior(0,2.0))
+        #self.covar_module.raw_outputscale
+        
+        # Hyperparameter variational distribution
+        
+        hyper_dim = self.data_dim + 2 # lengthscale per dim, sig var and noise var
+        hyper_prior_mean = torch.ones(hyper_dim)
+        log_hyper_prior = NormalPrior(hyper_prior_mean, torch.ones_like(hyper_prior_mean)) ## no correlation between hypers
+        #self.register_prior('prior_log_theta', log_hyper_prior, 'X')
 
-        log_hyper_prior = NormalPrior(hyper_prior_mean, torch.ones_like(hyper_prior_mean))
         self.log_theta = LogHyperVariationalDist(hyper_dim, log_hyper_prior, self.n, self.data_dim)
         
     def forward(self, x, log_theta=1.0):
@@ -111,12 +117,14 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
     
     def update_covar_module_at_theta(self, theta):
-        self.covar_module.base_kernel.lengthscale = theta 
+        self.covar_module.outputscale = theta[0]
+        self.covar_module.base_kernel.lengthscale = theta[1:self.data_dim]
+        self.likelihood.noise_covar.noise = theta[-1]
         return self.covar_module
     
-    def sample_variational_log_hyper(self):
+    def sample_variational_log_hyper(self, num_samples):
         
-        return self.log_theta()
+        return self.log_theta(num_samples)
     
     def get_inducing_prior(self):
         
@@ -134,7 +142,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         for i in iterator:
             batch_index = self._get_batch_idx(batch_size=200)
             optimizer.zero_grad()
-            log_hyper_sample = self.sample_variational_log_hyper()
+            log_hyper_sample = self.sample_variational_log_hyper(num_samples=1)
             #print('hyper_sample :' + str(log_hyper_sample))
             output = self(self.train_x[batch_index], log_theta=log_hyper_sample)
             #print(self.covar_module.base_kernel.lengthscale)
@@ -143,8 +151,8 @@ class BayesianStochasticVariationalGP(ApproximateGP):
             if i%100 == 0:
                   print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
                   i + 1, 1000, loss.item(),
-                  self.base_covar_module.outputscale.item(),
-                  self.base_covar_module.base_kernel.lengthscale.item(),
+                  self.covar_module.outputscale.item(),
+                  self.covar_module.base_kernel.lengthscale,
                   self.likelihood.noise.item()))
             loss.backward()
             optimizer.step()
@@ -161,16 +169,29 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         
     def mixture_posterior_predictive(self, test_x):
         
-        ''' Returns the posterior predictive multivariate normal '''
+        ''' Returns the mixture posterior predictive - where samples are from the 
+            variational distribution of the hyperparameters.
+        '''
         
         self.eval()
         self.likelihood.eval()
         
-        # Test points are regularly spaced along [0,1]
+        log_hyper_samples = self.sample_variational_log_hyper(num_samples=100)
+
         # Make predictions by feeding model through likelihood
-        with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            y_star = self.likelihood(self(test_x))
-        return y_star
+        
+        list_of_y_pred_dists = []
+        
+        for i in range(len(log_hyper_samples)):
+            
+            theta = torch.nn.functional.softplus(log_hyper_samples[i])
+            
+            self.update_covar_module_at_theta(theta)
+            
+            with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                list_of_y_pred_dists.append(self.likelihood(self(test_x)))
+        
+        return list_of_y_pred_dists
     
 
 # if __name__ == '__main__':

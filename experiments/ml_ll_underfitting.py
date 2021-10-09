@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-<<<<<<< HEAD
 Experiments with synthetic data to analyse ML-II failure modes
 with sensitivity to training size, dimensions and input dist. 
 
-=======
-Created on Thu Jan 30 15:13:07 2020
-
-@author: vidhi
->>>>>>> 1eab4badae1ecc2ddac7a7bbf4014f76b74afb8b
 """
 
 import numpy as np

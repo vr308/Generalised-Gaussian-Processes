@@ -19,12 +19,16 @@ import numpy as np
 import os
 import pandas
 import logging
+import torch
 
 from urllib.request import urlopen
 logging.getLogger().setLevel(logging.INFO)
 import zipfile
 
-from utils.paths import DATA_PATH, BASE_SEED
+from utils.config import DATASET_DIR 
+from utils.config import BASE_SEED
+
+DATA_PATH = str(DATASET_DIR)
 
 uci_base_url = 'https://archive.ics.uci.edu/ml/machine-learning-databases/'
 
@@ -51,6 +55,7 @@ class Dataset(object):
 
         X_raw, Y_raw = self.read_data()
         X, Y = self.preprocess_data(X_raw, Y_raw)
+        #X, Y = self.read_data()
 
         ind = np.arange(self.N)
 
@@ -59,11 +64,11 @@ class Dataset(object):
 
         n = int(self.N * prop)
 
-        self.X_train = X[ind[:n]]
-        self.Y_train = Y[ind[:n]]
+        self.X_train = torch.Tensor(X[ind[:n]])
+        self.Y_train = torch.Tensor(Y[ind[:n]]).flatten()
 
-        self.X_test = X[ind[n:]]
-        self.Y_test = Y[ind[n:]]
+        self.X_test = torch.Tensor(X[ind[n:]])
+        self.Y_test = torch.Tensor(Y[ind[n:]]).flatten()
 
     @property
     def datadir(self):
@@ -138,7 +143,8 @@ class Energy(Dataset):
     url = uci_base_url + '00242/ENB2012_data.xlsx'
     def read_data(self):
         # NB this is the first output (aka Energy1, as opposed to Energy2)
-        data = pandas.read_excel(self.datapath).values[:, :-1]
+        #data = pandas.read_excel(self.datapath).values[:, :-1]
+        data = pandas.read_excel(self.datapath, engine='openpyxl', usecols=np.arange(9)).dropna().values
         return data[:, :-1], data[:, -1].reshape(-1, 1)
 
 
@@ -214,7 +220,7 @@ class WineWhite(WineRed):
 
 @add_regression
 class Yacht(Dataset):
-    N, D, name = 308, 6, 'yacht'
+    N, D, name = 307, 6, 'yacht'
     url = uci_base_url + '/00243/yacht_hydrodynamics.data'
 
     def read_data(self):
@@ -409,6 +415,6 @@ def get_classification_data(name, *args, **kwargs):
 
 ## Usage
 
-#data = get_regression_data('boston')
+data = get_regression_data('energy')
 #data = get_classification_data('yeast')
 

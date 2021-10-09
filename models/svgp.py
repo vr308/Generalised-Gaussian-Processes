@@ -41,8 +41,8 @@ class StochasticVariationalGP(ApproximateGP):
         self.train_y = train_y
 
         self.mean_module = ZeroMean()
-        self.base_covar_module = ScaleKernel(RBFKernel())
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        #self.base_covar_module = ScaleKernel(RBFKernel())
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=train_x.shape[-1]))
 
     def forward(self, x):
         mean_x = self.mean_module(x)
@@ -98,8 +98,8 @@ class StochasticVariationalGP(ApproximateGP):
                   if i%5 == 0:
                             print('Iter %d/%d - Loss: %.3f  outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
                             i + 1, 1000, loss.item(),
-                            self.base_covar_module.outputscale.item(),
-                            self.covar_module.base_kernel.lengthscale.item(),
+                            self.covar_module.outputscale.item(),
+                            self.covar_module.base_kernel.lengthscale,
                             self.likelihood.noise.item()))
                   optimizer.step()
         return losses

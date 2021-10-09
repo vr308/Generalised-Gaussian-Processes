@@ -66,6 +66,7 @@ if __name__ == '__main__':
     model_dict =  {}
 
     for m in range(len(model_list)):
+        
         print('Training with model ' + f'{model_list[m]}')
 
         # Initialise model and likelihood
@@ -100,63 +101,63 @@ if __name__ == '__main__':
 
     # Visualisation of synthetic example
 
-    plt.style.use('seaborn')
+    # plt.style.use('seaborn')
 
-    plt.figure(figsize=(14,4))
+    # plt.figure(figsize=(14,4))
 
-    # SGPR
-    plt.subplot(131)
-    visualise_posterior(model_dict['SparseGPR'], X_test, Y_test, Y_test_pred, mixture=False, title='SGPR', new_fig=False)
+    # # SGPR
+    # plt.subplot(131)
+    # visualise_posterior(model_dict['SparseGPR'], X_test, Y_test, Y_test_pred, mixture=False, title='SGPR', new_fig=False)
 
-    # SGPR w HMC
+    # # SGPR w HMC
 
-    plt.subplot(132)
-    visualise_posterior(model_dict['BayesianSGPR_HMC'], X_test, Y_test, Y_test_pred_list, mixture=True, title='SGPR + HMC', new_fig=False)
+    # plt.subplot(132)
+    # visualise_posterior(model_dict['BayesianSGPR_HMC'], X_test, Y_test, Y_test_pred_list, mixture=True, title='SGPR + HMC', new_fig=False)
 
-    plt.subplot(133)
-    plt.plot(losses_dict['SparseGPR'], label='SGPR')
-    plt.plot(losses_dict['BayesianSGPR_HMC'], label='SGPR + HMC')
-    plt.title('Neg. ELBO Loss')
-    plt.legend(fontsize='small')
+    # plt.subplot(133)
+    # plt.plot(losses_dict['SparseGPR'], label='SGPR')
+    # plt.plot(losses_dict['BayesianSGPR_HMC'], label='SGPR + HMC')
+    # plt.title('Neg. ELBO Loss')
+    # plt.legend(fontsize='small')
 
-    plt.figure(figsize=(14,4))
+    # plt.figure(figsize=(14,4))
 
-    # Samples
+    # # Samples
 
-    sgpr = model_dict['SparseGPR']
-    hmc = model_dict['BayesianSGPR_HMC']
+    # sgpr = model_dict['SparseGPR']
+    # hmc = model_dict['BayesianSGPR_HMC']
 
-    plt.subplot(131)
-    visualise_mixture_posterior_samples(hmc, X_test, Y_test_pred_list, title='GP Mixture Samples', new_fig=False)
-    plt.title('SGPR + HMC')
+    # plt.subplot(131)
+    # visualise_mixture_posterior_samples(hmc, X_test, Y_test_pred_list, title='GP Mixture Samples', new_fig=False)
+    # plt.title('SGPR + HMC')
 
-    plt.subplot(132)
-    plt.hist(trace_hyper['ls'], bins=25)
-    plt.axvline(sgpr.base_covar_module.base_kernel.lengthscale, color='r', label='ML-II')
-    plt.title('Lengthscale identification', fontsize='medium')
-    plt.legend()
+    # plt.subplot(132)
+    # plt.hist(trace_hyper['ls'], bins=25)
+    # plt.axvline(sgpr.base_covar_module.base_kernel.lengthscale, color='r', label='ML-II')
+    # plt.title('Lengthscale identification', fontsize='medium')
+    # plt.legend()
 
-    plt.subplot(133)
-    plt.hist(trace_hyper['sig_n'], bins=25)
-    plt.axvline(sgpr.base_covar_module.base_kernel.lengthscale, color='r', label='ML-II')
-    plt.axvline(x=0.4, label='Truth', c='k', linestyle='--')
-    plt.title('Noise sd identification', fontsize='medium')
-    plt.legend()
+    # plt.subplot(133)
+    # plt.hist(trace_hyper['sig_n'], bins=25)
+    # plt.axvline(sgpr.base_covar_module.base_kernel.lengthscale, color='r', label='ML-II')
+    # plt.axvline(x=0.4, label='Truth', c='k', linestyle='--')
+    # plt.title('Noise sd identification', fontsize='medium')
+    # plt.legend()
 
-    import pickle as pkl
+    # import pickle as pkl
 
-    with open('pre_trained_models/hmc.pkl', 'wb') as file:
-        pkl.dump((hmc.state_dict(), likelihood.state_dict()), file)
-
-
+    # with open('pre_trained_models/hmc.pkl', 'wb') as file:
+    #     pkl.dump((hmc.state_dict(), likelihood.state_dict()), file)
 
 
-    #Compute metrics
-    sample_means, sample_stds = get_posterior_predictive_means_stds(Y_test_pred_list)
-    rmse_sgpr = rmse(Y_test_pred.loc, Y_test)
-    rmse_sgpr_hmc = rmse(get_posterior_predictive_mean(sample_means), Y_test)
 
-    print('RMSE SGPR ' + str(rmse_sgpr))
-    print('RMSE SGPR HMC ' + str(rmse_sgpr_hmc))
 
-    nll = neg_test_log_likelihood(model, y_star, test_y)
+    # #Compute metrics
+    # sample_means, sample_stds = get_posterior_predictive_means_stds(Y_test_pred_list)
+    # rmse_sgpr = rmse(Y_test_pred.loc, Y_test)
+    # rmse_sgpr_hmc = rmse(get_posterior_predictive_mean(sample_means), Y_test)
+
+    # print('RMSE SGPR ' + str(rmse_sgpr))
+    # print('RMSE SGPR HMC ' + str(rmse_sgpr_hmc))
+
+    # nll = neg_test_log_likelihood(model, y_star, test_y)

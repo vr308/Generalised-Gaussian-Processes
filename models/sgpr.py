@@ -30,7 +30,7 @@ class SparseGPR(gpytorch.models.ExactGP):
         self.num_inducing = len(Z_init)
         self.likelihood = likelihood
         self.mean_module = ZeroMean()
-        self.base_covar_module = ScaleKernel(RBFKernel())
+        self.base_covar_module = ScaleKernel(RBFKernel(ard_num_dims = self.train_x.shape[-1]))
         self.covar_module = InducingPointKernel(self.base_covar_module, inducing_points=Z_init, likelihood=self.likelihood)
 
     def forward(self, x):
@@ -67,40 +67,78 @@ class SparseGPR(gpytorch.models.ExactGP):
         return trace_states
 
 
+    # def train_model(self, optimizer, combine_terms=True, n_restarts=10, num_steps=1000):
+
+    #     self.train()
+    #     self.likelihood.train()
+    #     mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
+
+    #     grad_params = get_trainable_param_names(self)
+
+    #     trace_states = []
+    #     losses = torch.zeros(n_restarts, num_steps)
+    #     for i in range(n_restarts):
+
+    #         ## re-initialise model
+    #         self.initialise_parameters()
+
+    #         for j in range(num_steps):
+    #           optimizer.zero_grad()
+    #           output = self(self.train_x)
+    #           if combine_terms:
+    #               loss = -mll(output, self.train_y)
+    #           else:
+    #               loss = -self.elbo(output, self.train_y)
+    #           losses[i, j] = loss.item()
+    #           loss.backward()
+    #           if j%100 == 0:
+    #                     print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
+    #                     j + 1, 1000, loss.item(),
+    #                     self.base_covar_module.outputscale.item(),
+    #                     self.base_covar_module.base_kernel.lengthscale.item(),
+    #                     self.likelihood.noise.item()))
+    #           optimizer.step()
+    #           states = self.state_dict().copy()
+    #           trace_states = SparseGPR.optimization_trace(trace_states, states, grad_params)
+    #         #hyper_trace_dict_i = {param_name: param for param_name, param in model_states[i] if 'covar_module' in param_name}
+       
+    #     print('Preserving final model state for restart iteration ' + str(i))
+    #     final_states.append({param_name: param.detach() for param_name, param in model_ml.state_dict().items()})
+    
+    #     return losses, trace_states
+    
     def train_model(self, optimizer, combine_terms=True, n_restarts=10, num_steps=1000):
 
         self.train()
         self.likelihood.train()
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
 
-        grad_params = get_trainable_param_names(self)
+        #grad_params = get_trainable_param_names(self)
 
-        trace_states = []
-        losses = torch.zeros(n_restarts, num_steps)
-        for i in range(n_restarts):
+        #trace_states = []
+        losses = []
 
-            ## re-initialise model
-
-            for j in range(num_steps):
+        for j in range(num_steps):
               optimizer.zero_grad()
-              output = self(self.train_x)
+              output = self.forward(self.train_x)
               if combine_terms:
-                  loss = -mll(output, self.train_y)
+                  loss = -mll(output, self.train_y).sum()
               else:
                   loss = -self.elbo(output, self.train_y)
-              losses[i, j] = loss.item()
+              losses.append(loss.item())
               loss.backward()
-              if j%100 == 0:
-                        print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
-                        j + 1, 1000, loss.item(),
+              if j%1000 == 0:
+                        print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %s   noise: %.3f ' % (
+                        j + 1, num_steps, loss.item(),
                         self.base_covar_module.outputscale.item(),
-                        self.base_covar_module.base_kernel.lengthscale.item(),
+                        self.base_covar_module.base_kernel.lengthscale,
                         self.likelihood.noise.item()))
+                        #self.covar_module.inducing_points[0:5]))
               optimizer.step()
-              states = self.state_dict().copy()
-              trace_states = SparseGPR.optimization_trace(trace_states, states, grad_params)
-            #hyper_trace_dict_i = {param_name: param for param_name, param in model_states[i] if 'covar_module' in param_name}
-        return losses, trace_states
+              #states = self.state_dict().copy()
+              #trace_states = SparseGPR.optimization_trace(trace_states, states, grad_params)
+              #hyper_trace_dict_i = {param_name: param for param_name, param in model_states[i] if 'covar_module' in param_name}
+        return losses
 
 
     def optimal_q_u(self):
@@ -113,7 +151,6 @@ class SparseGPR(gpytorch.models.ExactGP):
         self.eval()
         self.likelihood.eval()
 
-        # Test points are regularly spaced along [0,1]
         # Make predictions by feeding model through likelihood
         with torch.no_grad():
             y_star = self.likelihood(self(test_x))

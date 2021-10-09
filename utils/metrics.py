@@ -34,13 +34,16 @@ def get_trainable_param_names(model):
     return grad_params
 
 
-def neg_test_log_likelihood(model, Y_test_pred, Y_test):
+def nlpd(Y_test_pred, Y_test, Y_std):
 
       lpd = Y_test_pred.log_prob(Y_test)
       # return the average
-      return -torch.mean(lpd).detach()
+      
+      avg_lpd_rescaled = torch.mean(lpd).detach()/len(Y_test) - torch.log(torch.Tensor(Y_std))
+      
+      return -avg_lpd_rescaled
 
-def rmse(Y_pred_mean, Y_test):
+def rmse(Y_pred_mean, Y_test, Y_std):
 
-      return torch.sqrt(torch.mean((Y_pred_mean - Y_test)**2)).detach()
+      return Y_std.item()*torch.sqrt(torch.mean((Y_pred_mean - Y_test)**2)).detach()
 
