@@ -1,3 +1,5 @@
-*
-!*.py
-!.gitignore
+*.spyproject/
+*/__pycache__/*
+utils/data/*
+utils/logs/*
+
