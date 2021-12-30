@@ -69,14 +69,20 @@ if __name__ == "__main__":
 
 
     cov = pm.gp.cov.Constant(sig_sd_true**2)*pm.gp.cov.ExpQuad(1, lengthscale_true)
+    cov_per = pm.gp.cov.Constant(sig_sd_true**2)*pm.gp.cov.Periodic(1, period=2, ls=2)#*pm.gp.cov.ExpQuad(1, 1)
+
 
     # This will change the shape of the function
 
-    f_all = np.random.multivariate_normal(mean(X_all).eval(), cov=cov(X_all, X_all).eval(), size=1)
+    f_all = np.random.multivariate_normal(mean(X_all).eval(), cov=cov_per(X_all, X_all).eval(), size=1)
     
-    X_10, y_10 = generate_gp_training(X_all, f_all, 10, noise_sd_true, uniform)
-    X_15, y_15 = generate_gp_training(X_all, f_all, 15, noise_sd_true, uniform)
-    X_20, y_20 = generate_gp_training(X_all, f_all, 10, noise_sd_true, uniform)
+    X_10, y_10 = generate_gp_training(X_all, f_all, 20, noise_sd_true, uniform)
+    X_15, y_15 = generate_gp_training(X_all, f_all, 50, noise_sd_true, uniform)
+    X_40, y_40 = generate_gp_training(X_all, f_all, 90, noise_sd_true, uniform)
+    
+    X_train = [X_10, X_15, X_40]
+    y_train = [y_10, y_15, y_40]
+    sizes = [20,50,90]
 
     # Data attributes
 
@@ -85,83 +91,59 @@ if __name__ == "__main__":
     snr = np.round(sig_sd_true**2/noise_sd_true**2)
     
     # LML Surface as a function of training set size
-
-    # GP fit on 10 data points
-
-    X = X_20.ravel()
-    y = y_20.ravel()
-
-    kernel = 1.0 * RBF(length_scale=0.1, length_scale_bounds=(1e-2, 1e4)) \
-            + WhiteKernel(noise_level=1,noise_level_bounds="fixed")
-
-    gp = GaussianProcessRegressor(kernel=kernel,
-                                      alpha=0.0, n_restarts_optimizer=5).fit(X[:,None], y)
-    print(gp.kernel_)
-
-    #gp.log_marginal_likelihood((-2.302, -2.302))
-
-    theta0 = np.logspace(-1, 1.5, 60)
-    theta1 = np.logspace(-1, 1.2, 60)
-    Theta0, Theta1 = np.meshgrid(theta0, theta1)
-    #theta = np.log([Theta0[i,j], Theta1[i, j]])
-    LML = [[gp.log_marginal_likelihood(np.log([Theta0[i,j], Theta1[i, j]]))
-            for i in range(60)] for j in range(60)]
-    LML = np.round(np.array(LML).T,2)
-    vmin, vmax = (-LML).min(), (-LML).max()
-    vmax = 100
-    level = np.around(np.logspace(np.log10(vmin), np.log10(vmax), 100), decimals=2)
+    
     plt.figure(figsize=(8,4))
-    plt.contourf(Theta0, Theta1, -LML,
-                levels=level, alpha=1, extend='min')
-    C = plt.contour(Theta0, Theta1, -LML, levels=level, colors='black', linewidth=.2)
-    plt.clabel(C, levels=level, fontsize=10)
-    plt.xscale("log")
-    plt.yscale("log")
-    plt.axhline(y=lengthscale_true, color='r')
-    plt.axvline(x=sig_sd_true**2, color='r')
-    plt.scatter(gp.kernel_.k1.k1.constant_value, gp.kernel_.k1.k2.length_scale, marker='x', color='red')
-    plt.ylabel("Length-scale", fontsize='x-small')
-    plt.xlabel("Sig var", fontsize='x-small')
-    plt.xticks(fontsize='x-small')
-    plt.yticks(fontsize='x-small')
-    plt.title("Negative Log-marginal-likelihood", fontsize='x-small')
+    # GP fit on 10 data points
+    
+    for i in [0,1,2]:
+        
+        X = X_train[i].ravel()
+        y = y_train[i].ravel()
+        
+        plt.subplot(1,3,i+1)
+    
+        kernel = 100 * PER(length_scale=1, length_scale_bounds=(1e-2, 1e4), periodicity=1.0) \
+                + WhiteKernel(noise_level=1,noise_level_bounds="fixed")
+    
+        gp = GaussianProcessRegressor(kernel=kernel,
+                                          alpha=0.0, n_restarts_optimizer=5).fit(X[:,None], y)
+        print(gp.kernel_)
+    
+        #gp.log_marginal_likelihood((-2.302, -2.302))
+    
+        theta0 = np.logspace(-2, 2.0, 100)
+        theta1 = np.logspace(-1, 2, 100)
+        Theta0, Theta1 = np.meshgrid(theta0, theta1)
+        #theta = np.log([Theta0[i,j], Theta1[i, j]])
+        LML = [[gp.log_marginal_likelihood(np.log([25.0, Theta0[i,j], Theta1[i, j]]))
+                for i in range(100)] for j in range(100)]
+        LML = np.round(np.array(LML).T,2)
+        vmin, vmax = (-LML).min(), (-LML).max()
+        vmax = 100
+        level = np.around(np.logspace(np.log10(vmin), np.log10(vmax), 100), decimals=2)
+        #level = np.arange(22.70,23,0.01)
+        #plt.figure(figsize=(8,4))
+        plt.contourf(Theta0, Theta1, -LML,
+                    levels=level, alpha=1, extend='both', nchunk=0)
+        C = plt.contour(Theta0, Theta1, -LML, levels=level[::10], colors='black', linewidth=.05, alpha=0.5, nchunk=0)
+        plt.clabel(C, fontsize=5)
+        id_flat = np.where(-LML < level[1])
+        #plt.scatter(Theta0[0][id_flat[1]], Theta1[:,0][id_flat[0]], marker='x', color='red', s=1)
+    
+        #lml_grid_flat = np.repeat(-LML[id_flat], repeats=len(id_flat[0])).reshape(len(id_flat[0]),len(id_flat[0]))
+        #plt.contourf(Theta0[0][id_flat[1]], Theta1[:,0][id_flat[0]], lml_grid_flat, levels=np.unique(lml_grid_flat), colors='black', linewidth=.2, nchunk=0)
+        plt.xscale("log")
+        plt.yscale("log")
+        #plt.axhline(y=lengthscale_true, color='r')
+        #plt.axvline(x=sig_sd_true**2, color='r')
+        #plt.scatter(sig_sd_true**2, lengthscale_true, color='r', marker='x')
+        #plt.scatter(gp.kernel_.k1.k1.constant_value, gp.kernel_.k1.k2.length_scale, marker='x', color='blue')
+        plt.xlabel("Lengthscale", fontsize='x-small')
+        plt.ylabel("Periodicity", fontsize='x-small')
+        plt.xticks(fontsize='small')
+        plt.yticks(fontsize='small')
+        plt.title('Train size = ' + str(sizes[i]), fontsize='small')
+    
+    plt.suptitle("Neg. log marginal likelihood (Sig var vs. Lengthscale)" + '\n' + 'Model Mismatch', fontsize='small')
 
-
-    rng = np.random.RandomState(0)
-    X_all = rng.uniform(0, 10, 40)[:, np.newaxis]
-    
-    X_small = np.random.choice(X_all.ravel(), replace=False, size=20)
-    X_large = np.random.choice(X_all.ravel(), replace=False, size=30)
-    
-    X = X_small[:,None]
-    
-    f = np.exp(np.cos((0.4 - X[:,0])))
-    y = f + rng.normal(0, 0.5, X.shape[0])
-    
-    X_star = np.linspace(0, 10, 100)
-    f_star = np.exp(np.cos((0.4 - X_star)))
-    
-    kernel = 1.0 * RBF(length_scale=100.0, length_scale_bounds=(1e-2, 1e4)) \
-        + WhiteKernel(noise_level=1, noise_level_bounds=(1e-10, 1e+1))
-    gp1 = GaussianProcessRegressor(kernel=kernel,
-                                  alpha=0.0).fit(X, y)
-    
-    y_mean, y_cov = gp1.predict(X_star[:, np.newaxis], return_cov=True)
-    plt.plot(X_star, y_mean, 'r', lw=1, zorder=9)
-    plt.fill_between(X_star, y_mean - np.sqrt(np.diag(y_cov)),
-                     y_mean + np.sqrt(np.diag(y_cov)),
-                     alpha=0.2, color='k')
-    plt.plot(X_star, f_star, 'k', lw=2, zorder=9)
-    plt.scatter(X[:, 0], y, c='k', s=10)
-    #plt.title("Initial: %s\nOptimum: %s\nLog-Marginal-Likelihood: %s"
-    #          % (kernel, gp.kernel_,
-    #             gp.log_marginal_likelihood(gp.kernel_.theta)))
-    lml = np.round(gp1.log_marginal_likelihood(gp1.kernel_.theta), 3)
-    plt.title('LML:' + str(lml), fontsize='small')
-    plt.xticks(fontsize='small')
-    plt.yticks(fontsize='small')
-    plt.xlabel('X',fontsize='small')
-    plt.ylabel('y',fontsize='small')
-    plt.tight_layout()
-    
 
