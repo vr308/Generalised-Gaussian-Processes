@@ -13,7 +13,7 @@ import time as time
 import matplotlib.pylab as plt
 from theano.tensor.nlinalg import matrix_inverse
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as Ck, RationalQuadratic as RQ, Matern, ExpSineSquared as PER, WhiteKernel
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as Ck, ExpSineSquared as PER, WhiteKernel
 from matplotlib.colors import LogNorm
 import seaborn as sns
 from theano.tensor.nlinalg import matrix_inverse
@@ -64,25 +64,22 @@ if __name__ == "__main__":
 
     sig_sd_true = 5.0
     lengthscale_true = 2.0
-    noise_sd_true = np.sqrt(1)
+    noise_sd_true = np.sqrt(10)
     uniform = True
 
-
     cov = pm.gp.cov.Constant(sig_sd_true**2)*pm.gp.cov.ExpQuad(1, lengthscale_true)
-    cov_per = pm.gp.cov.Constant(sig_sd_true**2)*pm.gp.cov.Periodic(1, period=2, ls=2)#*pm.gp.cov.ExpQuad(1, 1)
-
 
     # This will change the shape of the function
 
-    f_all = np.random.multivariate_normal(mean(X_all).eval(), cov=cov_per(X_all, X_all).eval(), size=1)
+    f_all = np.random.multivariate_normal(mean(X_all).eval(), cov=cov(X_all, X_all).eval(), size=1)
     
-    X_10, y_10 = generate_gp_training(X_all, f_all, 20, noise_sd_true, uniform)
-    X_15, y_15 = generate_gp_training(X_all, f_all, 50, noise_sd_true, uniform)
-    X_40, y_40 = generate_gp_training(X_all, f_all, 90, noise_sd_true, uniform)
+    X_10, y_10 = generate_gp_training(X_all, f_all, 10, noise_sd_true, uniform)
+    X_15, y_15 = generate_gp_training(X_all, f_all, 15, noise_sd_true, uniform)
+    X_40, y_40 = generate_gp_training(X_all, f_all, 40, noise_sd_true, uniform)
     
     X_train = [X_10, X_15, X_40]
     y_train = [y_10, y_15, y_40]
-    sizes = [20,50,90]
+    sizes = [10,15,40]
 
     # Data attributes
 
@@ -102,20 +99,22 @@ if __name__ == "__main__":
         
         plt.subplot(1,3,i+1)
     
-        kernel = 100 * PER(length_scale=1, length_scale_bounds=(1e-2, 1e4), periodicity=1.0) \
+        lengthscale_init = np.random.normal()
+        
+        kernel = 100 * RBF(length_scale=10) \
                 + WhiteKernel(noise_level=1,noise_level_bounds="fixed")
     
         gp = GaussianProcessRegressor(kernel=kernel,
-                                          alpha=0.0, n_restarts_optimizer=5).fit(X[:,None], y)
+                                          alpha=0.0, n_restarts_optimizer=1).fit(X[:,None], y)
         print(gp.kernel_)
     
         #gp.log_marginal_likelihood((-2.302, -2.302))
     
-        theta0 = np.logspace(-2, 2.0, 100)
-        theta1 = np.logspace(-1, 2, 100)
+        theta0 = np.logspace(-1, 3.0, 100)
+        theta1 = np.logspace(-1, 1, 100)
         Theta0, Theta1 = np.meshgrid(theta0, theta1)
         #theta = np.log([Theta0[i,j], Theta1[i, j]])
-        LML = [[gp.log_marginal_likelihood(np.log([25.0, Theta0[i,j], Theta1[i, j]]))
+        LML = [[gp.log_marginal_likelihood(np.log([Theta0[i,j], Theta1[i, j]]))
                 for i in range(100)] for j in range(100)]
         LML = np.round(np.array(LML).T,2)
         vmin, vmax = (-LML).min(), (-LML).max()
@@ -136,10 +135,10 @@ if __name__ == "__main__":
         plt.yscale("log")
         #plt.axhline(y=lengthscale_true, color='r')
         #plt.axvline(x=sig_sd_true**2, color='r')
-        #plt.scatter(sig_sd_true**2, lengthscale_true, color='r', marker='x')
-        #plt.scatter(gp.kernel_.k1.k1.constant_value, gp.kernel_.k1.k2.length_scale, marker='x', color='blue')
-        plt.xlabel("Lengthscale", fontsize='x-small')
-        plt.ylabel("Periodicity", fontsize='x-small')
+        plt.scatter(sig_sd_true**2, lengthscale_true, color='r', marker='x')
+        plt.scatter(gp.kernel_.k1.k1.constant_value, gp.kernel_.k1.k2.length_scale, marker='x', color='blue')
+        plt.xlabel("Sig var", fontsize='x-small')
+        plt.ylabel("Lengthscale", fontsize='x-small')
         plt.xticks(fontsize='small')
         plt.yticks(fontsize='small')
         plt.title('Train size = ' + str(sizes[i]), fontsize='small')
@@ -147,3 +146,75 @@ if __name__ == "__main__":
     plt.suptitle("Neg. log marginal likelihood (Sig var vs. Lengthscale)" + '\n' + 'Model Mismatch', fontsize='small')
 
 
+    ### Understanding the variability of the converged hypers under ML-II
+    
+    ####### 1d analysis
+    
+    ls_conv = []
+    sig_var_conv = []
+    ml_values = []
+    
+    for i in np.arange(100):
+        
+        ls_init = np.random.lognormal(mean=1, sigma=3)
+        sig_var_init = np.random.lognormal(mean=1, sigma=3)
+        
+        print(ls_init)
+        
+        kernel = sig_var_init * RBF(length_scale=ls_init) \
+                + WhiteKernel(noise_level=2)
+    
+        gp = GaussianProcessRegressor(kernel=kernel,
+                                          alpha=0.0, n_restarts_optimizer=1).fit(X[:,None], y)
+        
+        ls_conv.append(gp.kernel_.k1.k2.length_scale)
+        sig_var_conv.append(gp.kernel_.k1.k1.constant_value)
+        ml_values.append(gp.log_marginal_likelihood_value_)
+        
+    plt.figure()
+    plt.plot(sig_var_conv)
+    
+    ######### 2d analysis
+    
+    num_grid = 50
+    X = np.linspace(1, 15, num_grid)
+    jitter = np.eye(num_grid**2)*1e-6
+    X_grid = np.meshgrid(X, X)
+    X = np.vstack((X_grid[0].flatten(), X_grid[1].flatten())).T
+    
+    train_index = np.random.randint(0,X_grid[0].shape[0]*X_grid[0].shape[1],10)
+        
+    ls_2d_true = [2,2]
+    
+    cov = pm.gp.cov.Constant(sig_sd_true**2)*pm.gp.cov.ExpQuad(2, ls=ls_2d_true)
+
+    # This will change the shape of the function
+
+    f_all = np.random.multivariate_normal(mean(X).eval(), cov=cov(X, X).eval(), size=1)
+    
+    plt.matshow(f_all.reshape(50,50))
+    
+    y_all = f_all.ravel() + np.random.normal(0, scale=noise_sd_true, size=f_all.shape[1])
+    
+    X_train = X[train_index]
+    y_train = y_all[train_index]
+    
+    ls_conv = []
+    sig_var_conv = []
+    ml_values = []
+      
+    for i in np.arange(100):
+          
+        ls_init = np.random.lognormal(mean=1, sigma=3, size=2)
+        sig_var_init = np.random.lognormal(mean=1, sigma=3)
+        
+        
+        kernel = sig_var_init * RBF(length_scale=ls_init) \
+                + WhiteKernel(noise_level=2)
+    
+        gp = GaussianProcessRegressor(kernel=kernel,
+                                          alpha=0.0, n_restarts_optimizer=10).fit(X_train, y_train)
+        
+        ls_conv.append(gp.kernel_.k1.k2.length_scale)
+        sig_var_conv.append(gp.kernel_.k1.k1.constant_value)
+        ml_values.append(gp.log_marginal_likelihood_value_)

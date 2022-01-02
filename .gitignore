@@ -1,5 +1,6 @@
 *.spyproject/
 */__pycache__/*
 utils/data/*
-utils/logs/*
+logs/*
+anaconda3_restore/*
 

@@ -17,7 +17,6 @@ from sklearn.gaussian_process.kernels import RBF, ConstantKernel as Ck,ExpSineSq
 from pathlib import Path
 import datetime
 import os
-BASE_PATH = Path(os.path.dirname(os.path.abspath(__file__)))
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel as Ck, RationalQuadratic as RQ, Matern, ExpSineSquared as PER, WhiteKernel
 
 def generate_gp_latent(X_all, mean, cov, size):

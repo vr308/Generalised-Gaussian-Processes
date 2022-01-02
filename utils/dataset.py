@@ -85,6 +85,7 @@ class Dataset(object):
 
     @property
     def needs_download(self):
+        print(self.datapath)
         return not os.path.isfile(self.datapath)
 
     def download(self):
@@ -147,13 +148,12 @@ class Energy(Dataset):
         data = pandas.read_excel(self.datapath, engine='openpyxl', usecols=np.arange(9)).dropna().values
         return data[:, :-1], data[:, -1].reshape(-1, 1)
 
-
 @add_regression
 class Kin8mn(Dataset):
     N, D, name = 8192, 8, 'kin8nm'
-    url = 'http://mldata.org/repository/data/download/csv/uci-20070111-kin8nm'
+    url = "https://www.openml.org/data/get_csv/3626/dataset_2175_kin8nm.arff"
     def read_data(self):
-        data = pandas.read_csv(self.datapath, header=None).values
+        data = pandas.read_csv(self.datapath, header=0).values
         return data[:, :-1], data[:, -1].reshape(-1, 1)
 
 
@@ -415,6 +415,6 @@ def get_classification_data(name, *args, **kwargs):
 
 ## Usage
 
-data = get_regression_data('energy')
-#data = get_classification_data('yeast')
+#data = get_regression_data('energy')
+data = get_classification_data('abalone')
 

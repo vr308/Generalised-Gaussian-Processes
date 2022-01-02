@@ -9,13 +9,13 @@ Reference: Hensman et al. 2015 Scalable Variational Gaussian process classificat
 import gpytorch as gpytorch
 import torch as torch
 import numpy as np
-import tqdm
+from tqdm import tqdm
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import VariationalStrategy
-from gpytorch.kernels import ScaleKernel, RBFKernel
 from gpytorch.means import ZeroMean
 from torch.utils.data import TensorDataset, DataLoader
+from utils.metrics import rmse, nlpd
 
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14)
@@ -23,7 +23,7 @@ def func(x):
 class StochasticVariationalGP(ApproximateGP):
 
     """ The sparse GP class for regression with the uncollapsed stochastic bound.
-         The parameters of q(u) \sim N(m, S) are learnt explicitly.
+         The parameters of q(u) \sim N(m, S) are learnt numerically.
     """
 
     def __init__(self, train_x, train_y, likelihood, Z_init):
@@ -79,29 +79,44 @@ class StochasticVariationalGP(ApproximateGP):
 
     def train_model(self, optimizer, train_loader, minibatch_size=100, num_epochs=25, combine_terms=True):
 
-        self.train()
-        self.likelihood.train()
         mll = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=len(self.train_y))
 
         losses = []
         for i in range(num_epochs):
-            minibatch_iter = tqdm.notebook.tqdm(train_loader, desc="Minibatch", leave=True)
-            for x_batch, y_batch in minibatch_iter:
-                  optimizer.zero_grad()
-                  output = self(x_batch)
-                  if combine_terms:
-                      loss = -mll(output, y_batch)
-                  else:
-                      loss = -self.elbo(output, y_batch)
-                  losses.append(loss)
-                  loss.backward()
-                  if i%5 == 0:
-                            print('Iter %d/%d - Loss: %.3f  outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
-                            i + 1, 1000, loss.item(),
-                            self.covar_module.outputscale.item(),
-                            self.covar_module.base_kernel.lengthscale,
-                            self.likelihood.noise.item()))
-                  optimizer.step()
+            with tqdm(train_loader, unit="batch", leave=True) as minibatch_iter:
+                for x_batch, y_batch in minibatch_iter:
+                      
+                      self.train()
+                      self.likelihood.train()
+                      
+                      minibatch_iter.set_description(f"Epoch {i}")
+                      
+                      optimizer.zero_grad()
+                      
+                      output = self(x_batch)
+                      if combine_terms:
+                          loss = -mll(output, y_batch)
+                      else:
+                          loss = -self.elbo(output, y_batch)
+                      losses.append(loss.item())
+                      loss.backward()
+                      
+                      #if i%100 == 0:
+                      #          print('Iter %d/%d - Loss: %.3f  outputscale: %.3f  lengthscale: %s   noise: %.3f' % (
+                      #          i + 1, 1000, loss.item(),
+                      #          self.covar_module.outputscale.item(),
+                      #          self.covar_module.base_kernel.lengthscale,
+                      #          self.likelihood.noise.item()))
+                      
+                      optimizer.step()
+                      
+                      ## Training metrics at end of each epoch
+                      Y_pred = self.posterior_predictive(x_batch)
+                      
+                      train_rmse = rmse(Y_pred.loc, y_batch, y_batch.std())
+                      #train_nlpd = nlpd(Y_test_pred, Y_test, Y_std)
+                      
+                      minibatch_iter.set_postfix(loss=loss.item(), rmse=train_rmse.item())
         return losses
 
     def optimization_trace(self):
@@ -114,58 +129,73 @@ class StochasticVariationalGP(ApproximateGP):
         self.eval()
         self.likelihood.eval()
 
-        # Test points are regularly spaced along [0,1]
-        # Make predictions by feeding model through likelihood
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
             y_star = self.likelihood(self(test_x))
         return y_star
 
 
-# if __name__ == '__main__':
+#if __name__ == '__main__':
+    
+    # from utils.experiment_tools import get_dataset_class
+    
+    # dataset = get_dataset_class('Boston')(split=0, prop=0.8)
+    # X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
+    
+    # num_inducing = 100
+    # # N = 1000  # Number of training observations
 
-#     N = 1000  # Number of training observations
+    # # X = torch.randn(N) * 2 - 1  # X values
+    # # Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
 
-#     X = torch.randn(N) * 2 - 1  # X values
-#     Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+    # # train_n = int(np.floor(0.8 * len(X)))
+    # # train_x = X[:train_n][:,None]
+    # # train_y = Y[:train_n].contiguous()
 
-#     train_n = int(floor(0.8 * len(X)))
-#     train_x = X[:train_n][:,None]
-#     train_y = Y[:train_n].contiguous()
+    # # test_x = X[train_n:][:,None]
+    # # test_y = Y[train_n:].contiguous()
 
-#     test_x = X[train_n:][:,None]
-#     test_y = Y[train_n:].contiguous()
+    # train_dataset = TensorDataset(X_train, Y_train)
+    # train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
 
-#     train_dataset = TensorDataset(train_x, train_y)
-#     train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+    # #test_dataset = TensorDataset(X_test, Y_test)
+    # #test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
 
-#     test_dataset = TensorDataset(test_x, test_y)
-#     test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
+    # # Initial inducing points
+    # Z_init = X_train[np.random.randint(0,len(X_train), num_inducing)]
 
-#     # Initial inducing points
-#     Z_init = torch.randn(25)
+    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    # model = StochasticVariationalGP(X_train, Y_train, likelihood, Z_init).double()
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-#     likelihood = gpytorch.likelihoods.GaussianLikelihood()
-#     model = StochasticVariationalGP(train_x, train_y, likelihood, Z_init)
-#     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    # # Train
+    # losses = model.train_model(optimizer, train_loader,
+    #                             minibatch_size=100, num_epochs=200,  combine_terms=True)
+    
+    
+    # Y_train_pred = model.posterior_predictive(X_train)
+    # Y_test_pred = model.posterior_predictive(X_test)
+
+    # ### Compute Metrics  ###########
+    
+    # rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
+    # rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
+   
+    # ### Convert everything back to float for Naval 
+    
+    # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
+    # nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
 
 
-#     # Train
-#     losses = model.train_model(likelihood, optimizer, train_loader,
-#                                minibatch_size=100, num_epochs=100,  combine_terms=True)
+    # Test
+    # test_x = torch.linspace(-8, 8, 1000)
+    # test_y = func(test_x)
 
-#     # Test
-#     test_x = torch.linspace(-8, 8, 1000)
-#     test_y = func(test_x)
+    # y_star = model.posterior_predictive(test_x)
 
-#     y_star = model.posterior_predictive(test_x)
-
-#     # Visualise
-
-#     model.visualise_posterior(test_x, y_star)
-
-#     # Compute metrics
-#     rmse = model.rmse(y_star, test_y)
-#     nll = model.neg_test_log_likelihood(y_star, test_y)
+    # # Visualise
+    # # Compute metrics
+    # rmse = model.rmse(y_star, test_y)
+    # nll = model.neg_test_log_likelihood(y_star, test_y)
 
 
 #  num_epochs = 100
