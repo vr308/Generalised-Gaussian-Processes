@@ -80,7 +80,12 @@ class Dataset(object):
     @property
     def datapath(self):
         #print(self.url)
-        filename = self.url.split('/')[-1]  # this is for the simple case with no zipped files
+        try:
+            self.url
+        except AttributeError:
+            filename = self.filename
+        else:
+            filename = self.url.split('/')[-1]  # this is for the simple case with no zipped files
         return os.path.join(self.datadir, filename)
 
     @property
@@ -226,7 +231,26 @@ class Yacht(Dataset):
     def read_data(self):
         data = pandas.read_fwf(self.datapath, header=None).values[:-1, :]
         return data[:, :-1], data[:, -1].reshape(-1, 1)
+    
+@add_regression
+class CoalDisasters(Dataset):
+    N, D, name = 111, 1, 'coal'
+    filename = 'coal_mining.csv'
+    
+    def read_data(self):
+            data = pandas.read_csv(self.datapath, index_col=0).values[:-1,:]
+            return data[:, :-1], data[:, -1].reshape(-1, 1)
 
+@add_regression
+class PineSaplings(Dataset):
+    N, D, name = 125, 2, 'pine'
+    filename = 'forest.csv'
+    
+    def read_data(self):
+            data = pandas.read_csv(self.datapath, index_col=0).values[:-1,:]
+            return data[:, :-1], data[:, -1].reshape(-1, 1)
+        
+        
 ##########################
 
 class Classification(Dataset):
@@ -242,7 +266,7 @@ class Classification(Dataset):
             return True
 
     def download(self):
-        logging.info('donwloading classification data. WARNING: downloading 195MB file'.format(self.name))
+        logging.info('downloading classification data. WARNING: downloading 195MB file'.format(self.name))
 
         filename = os.path.join(DATA_PATH, 'classification_data.tar.gz')
 
@@ -415,6 +439,6 @@ def get_classification_data(name, *args, **kwargs):
 
 ## Usage
 
-#data = get_regression_data('energy')
-data = get_classification_data('abalone')
+data = get_regression_data('coal')
+#data = get_classification_data('pine')
 

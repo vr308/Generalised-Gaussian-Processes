@@ -34,7 +34,7 @@ def parse_command_line_args() -> Namespace:
         nargs="*",
         help="Name of the log directories containing experimental results, format is e.g. Feb_12."
              "Specify more than one in case the experiment run overnight.",
-        default=["Dec_30", "Dec_31"]
+        default=["Dec_30", "Dec_31","Jan_01", "Jan_02"]
     )
 
     return parser.parse_args()
@@ -56,12 +56,13 @@ if __name__ == "__main__":
     data = []
     paths = []
     for date in args.dates:
-        results_dir = LOG_DIR / date
-        results_files = list(results_dir.glob(f'*{args.model_id}*.json'))
-        paths.extend(results_files)
-        for result_file in results_files:
-            with open(result_file) as json_file:
-                data.append(json.load(json_file))
+        #for model_id in args.model_id:
+            results_dir = LOG_DIR / date
+            results_files = list(results_dir.glob('*.json'))
+            paths.extend(results_files)
+            for result_file in results_files:
+                with open(result_file) as json_file:
+                    data.append(json.load(json_file))
 
     if len(paths) == 0:
         print("No results found - try a different results suffix")
@@ -75,7 +76,7 @@ if __name__ == "__main__":
     
     # # Aggregate the tables
     metrics = [col for col in list(df.columns) if (col.endswith('_rmse') or col.endswith('_nlpd'))]  
-    summary = df.groupby(['dataset_name'])[metrics].agg(['mean', standard_error])
+    summary = df.groupby(['dataset_name','model_name'])[metrics].agg(['mean', standard_error])
 
     pd.set_option("display.max_rows", None, "display.max_columns", None)
     print(summary)

@@ -37,8 +37,9 @@ plt.style.use('seaborn-muted')
 
 ## Naval and Kin8mn need n_jobs = 1
 
-#DATASETS = ["Boston", "Concrete", "Energy", "Power", "Kin8mn" ,"Naval", "Yacht", "WineRed"]
-DATASETS = ["Power", "Kin8mn", "Yacht", "WineRed"]
+DATASETS = ["Boston", "Concrete", "Energy", "Power", "Kin8mn" ,"Naval", "Yacht", "WineRed"]
+DATASETS = ["Naval"]
+
 MODEL_NAMES = ['SGPR', 'Bayesian_SGPR_HMC', 'SVGP', 'Bayesian_SVGP']
 MODEL_CLASS = [
             SparseGPR,
@@ -46,7 +47,8 @@ MODEL_CLASS = [
             StochasticVariationalGP,
             BayesianStochasticVariationalGP
             ]
-SPLIT_INDICES = [*range(10)]
+#SPLIT_INDICES = [*range(10)]
+SPLIT_INDICES =[7,8,9]
 
 model_dictionary = dict(zip(MODEL_NAMES, MODEL_CLASS))
 
@@ -70,7 +72,7 @@ def single_run(
         ###### Loading a data split ########
         
         dataset = get_dataset_class(dataset_name)(split=split_index, prop=train_test_split)
-        X_train, Y_train, X_test, Y_test = dataset.X_train, dataset.Y_train, dataset.X_test, dataset.Y_test
+        X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
         
         ###### Initialising model class, likelihood, inducing inputs ##########
         
@@ -82,7 +84,7 @@ def single_run(
         Z_init = X_train[np.random.randint(0,len(X_train), num_inducing)]
 
         model = model_class(X_train, Y_train.flatten(), likelihood, Z_init)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
         
         ####### Custom training depending on model class #########
 
@@ -184,8 +186,8 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default='SVGP')
-    parser.add_argument("--num_inducing", type=int, default=100)
+    parser.add_argument("--model_name", type=str, default='SGPR')
+    parser.add_argument("--num_inducing", type=int, default=200)
     parser.add_argument("--seed", type=int, default=51)
     parser.add_argument("--max_iters", type=int, default=2000)
     parser.add_argument("--num_epochs", type=int, default=400)
