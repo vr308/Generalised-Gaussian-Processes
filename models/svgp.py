@@ -111,12 +111,11 @@ class StochasticVariationalGP(ApproximateGP):
                       optimizer.step()
                       
                       ## Training metrics at end of each epoch
-                      Y_pred = self.posterior_predictive(x_batch)
-                      
-                      train_rmse = rmse(Y_pred.loc, y_batch, y_batch.std())
+                      #Y_pred = self.posterior_predictive(x_batch)
+                      #train_rmse = rmse(Y_pred.loc, y_batch, y_batch.std())
                       #train_nlpd = nlpd(Y_test_pred, Y_test, Y_std)
-                      
-                      minibatch_iter.set_postfix(loss=loss.item(), rmse=train_rmse.item())
+                      #minibatch_iter.set_postfix(loss=loss.item(), rmse=train_rmse.item())
+                      minibatch_iter.set_postfix(loss=loss.item())
         return losses
 
     def optimization_trace(self):
