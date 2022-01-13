@@ -6,6 +6,8 @@ Utilities for computation of metrics
 """
 
 import torch
+import scipy.stats as st
+import numpy as np
 from prettytable import PrettyTable
 
 def print_trainable_param_names(model):
@@ -33,7 +35,10 @@ def get_trainable_param_names(model):
         grad_params.append(name)
     return grad_params
 
+def rmse(Y_pred_mean, Y_test, Y_std):
 
+      return Y_std.item()*torch.sqrt(torch.mean((Y_pred_mean - Y_test)**2)).detach()
+  
 def nlpd(Y_test_pred, Y_test, Y_std):
     
       #Y_test_pred.covariance_matrix += 1e-2*torch.eye(len(Y_test))
@@ -44,8 +49,17 @@ def nlpd(Y_test_pred, Y_test, Y_std):
       avg_lpd_rescaled = torch.mean(lpd).detach()/len(Y_test) - torch.log(torch.Tensor(Y_std))
       
       return -avg_lpd_rescaled
+  
+def nlpd_mixture(Y_test, mix_means, mix_std):
+      
+      mix = torch.distributions.Categorical(torch.ones(100,))
+    
+      lppd_per_point = []
+      for i in np.arange(len(Y_test)):
+            comp = torch.distributions.Normal(torch.tensor([mix_means[:,i]]), torch.tensor([mix_std[:,i]]))
+            gmm = torch.distributions.MixtureSameFamily(mix, comp)
+            lppd_per_point.append(gmm.log_prob(Y_test[i]).item())
+      return -np.round(np.mean(lppd_per_point),3)
+    
 
-def rmse(Y_pred_mean, Y_test, Y_std):
-
-      return Y_std.item()*torch.sqrt(torch.mean((Y_pred_mean - Y_test)**2)).detach()
 
