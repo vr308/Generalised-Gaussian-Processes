@@ -28,6 +28,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
    """ The sparse GP class for regression with the doubly 
         collapsed stochastic bound.
         q(u) is implicit 
+        theta is sampled using HMC every 200 iterations
    """
       
    def __init__(self, train_x, train_y, likelihood, Z_init):
@@ -36,9 +37,10 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         self.train_x = train_x
         self.train_y = train_y
         self.inducing_points = Z_init
-        self.num_inducing = len(Z_init)                                                                                             
+        self.num_inducing = len(Z_init)  
+        self.data_dim = self.train_x.shape[1]                                                                                          
         self.mean_module = ZeroMean()
-        self.base_covar_module = ScaleKernel(RBFKernel())
+        self.base_covar_module = ScaleKernel(RBFKernel(ard_num_dims=self.data_dim))
         self.covar_module = InducingPointKernel(self.base_covar_module, inducing_points=Z_init, likelihood=likelihood)
 
    def forward(self, x): 
@@ -56,7 +58,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
        
        with pm.Model() as model:
            
-            ls = pm.Gamma("ls", alpha=2, beta=1)
+            ls = pm.Gamma("ls", alpha=2, beta=1, shape=(input_dim,))
             sig_f = pm.HalfCauchy("sig_f", beta=5)
         
             cov = sig_f ** 2 * pm.gp.cov.ExpQuad(input_dim=input_dim, ls=ls)
@@ -77,14 +79,14 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
        elbo.model.base_covar_module.outputscale = trace_hyper['sig_f'][-1]**2
        elbo.model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][-1]
                
-   def train_model(self, optimizer):
+   def train_model(self, optimizer, num_steps=5000, break_for_hmc=1000):
 
         self.train()
         self.likelihood.train()
         elbo = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
         
         losses = []
-        for i in range(1000):
+        for i in range(num_steps):
           optimizer.zero_grad()
           output = self(self.train_x)
           self.freeze_kernel_hyperparameters()
@@ -92,14 +94,14 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
           loss = -elbo(output, self.train_y)
           losses.append(loss)
           loss.backward()
-          if i%200 == 0:
-                    print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %.3f   noise: %.3f' % (
-                    i + 1, 1000, loss.item(),
+          if i%break_for_hmc == 0: ## alternate to hmc sampling 
+                    print('Iter %d/%d - Loss: %.3f   outputscale: %.3f lengthscale: %s noise: %.3f' % (
+                    i + 1, num_steps, loss.item(),
                     self.base_covar_module.outputscale.item(),
-                    self.base_covar_module.base_kernel.lengthscale.item(),
+                    self.base_covar_module.base_kernel.lengthscale,
                     self.likelihood.noise.item()))
-                    Z_opt = self.inducing_points.numpy()[:,None]
-                    trace_hyper = self.sample_optimal_variational_hyper_dist(200, 1, Z_opt)  
+                    Z_opt = self.inducing_points.numpy()   #[:,None]
+                    trace_hyper = self.sample_optimal_variational_hyper_dist(200, self.data_dim, Z_opt)  
                     self.update_elbo_with_hyper_samples(elbo, trace_hyper)
           optimizer.step()
           #print(elbo.model.base_covar_module.base_kernel.lengthscale)
@@ -124,70 +126,137 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
             self.base_covar_module.outputscale = trace_hyper['sig_f'][i]**2
             self.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][i]
     
-            with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                list_of_y_pred_dists.append(self.likelihood(self(test_x)))
+            with torch.no_grad():
+                pred = self.likelihood(self(test_x))
+                try:
+                    chol = torch.linalg.cholesky(pred.covariance_matrix + torch.eye(len(test_x))*1e-4)
+                    list_of_y_pred_dists.append(pred)
+                except RuntimeError:
+                    print('Not psd for ' + str(trace_hyper[i]) + ' ' + str(i))
         
         return list_of_y_pred_dists
        
-# if __name__ == '__main__':
-
-#     N = 1000  # Number of training observations
-
-#     X = torch.randn(N) * 2 - 1  # X values
-#     Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
-
-#     # Initial inducing points
-#     Z_init = torch.randn(12)
+if __name__ == '__main__':
     
-#     # Initialise model and likelihood
-#     likelihood = gpytorch.likelihoods.GaussianLikelihood()
-#     model = BayesianSparseGPR_HMC(X[:,None], Y, likelihood, Z_init)
-#     optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+    # from utils.experiment_tools import get_dataset_class
+    # from utils.metrics import rmse, nlpd
+
+    # dataset = get_dataset_class('Boston')(split=0, prop=0.8)
+    # X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
+    
+    # ###### Initialising model class, likelihood, inducing inputs ##########
+    
+    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    
+    # ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
+    # #Z_init = torch.randn(num_inducing, input_dim)
+    # Z_init = X_train[np.random.randint(0,len(X_train), 100)]
+
+    # model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    
+    # ####### Custom training depending on model class #########
+    
+    # losses, trace_hyper = model.train_model(optimizer, num_steps=2000, break_for_hmc=500)
+    
+    # Y_test_pred_list = model.mixture_posterior_predictive(X_test, trace_hyper) ### a list of predictive distributions
+
+    # y_mix_loc = np.array([np.array(dist.loc) for dist in Y_test_pred_list])
+    # y_mix_std = np.array([np.array(dist.covariance_matrix.diag()) for dist in Y_test_pred_list])
+    # y_mix_std = np.nan_to_num(y_mix_std, nan=1e-5)
+    
+    # # ### Compute Metrics  ###########
+    
+    # rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
+    
+    # # ### Convert everything back to float for Naval 
+    
+    # # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
+    # # nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
+    
+    
+
+    N = 1000  # Number of training observations
+
+    X = torch.randn(N) * 2 - 1  # X values
+    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+
+    # Initial inducing points
+    Z_init = torch.randn(12)
+    
+    # Initialise model and likelihood
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    model = BayesianSparseGPR_HMC(X[:,None], Y, likelihood, Z_init)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
         
-#     # Train
-#     #losses = model.train_model(likelihood, optimizer, combine_terms=True)
+    # Train
+    #losses = model.train_model(likelihood, optimizer, combine_terms=True)
     
-#     model.train()
-#     likelihood.train()
-#     mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
+    model.train()
+    likelihood.train()
+    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
       
-#     #model.set_hyper_priors()
+    #model.set_hyper_priors()
             
-#     losses = []
-#     for i in range(5000):
-#       optimizer.zero_grad()
-#       output = model(model.train_x)
-#       model.freeze_kernel_hyperparameters()
-#       loss = -mll(output, model.train_y)
-#       losses.append(loss)
-#       loss.backward()
-#       if i%200 == 0:
-#                 print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
-#                 i + 1, 5000, loss.item(),
-#                 model.base_covar_module.base_kernel.lengthscale.item(),
-#                 likelihood.noise.item()))
-#                 Z_opt = model.inducing_points.numpy()[:,None]
-#                 trace_hyper = model.sample_optimal_variational_hyper_dist(200, 1, Z_opt)  
-#                 model.update_elbo_with_hyper_samples(mll, trace_hyper)
-#       optimizer.step()
-#     #return losses
+    losses = []
+    for i in range(5000):
+      optimizer.zero_grad()
+      output = model(model.train_x)
+      model.freeze_kernel_hyperparameters()
+      loss = -mll(output, model.train_y)
+      losses.append(loss)
+      loss.backward()
+      if i%200 == 0:
+                print('Iter %d/%d - Loss: %.3f   lengthscale: %.3f   noise: %.3f' % (
+                i + 1, 5000, loss.item(),
+                model.base_covar_module.base_kernel.lengthscale.item(),
+                likelihood.noise.item()))
+                Z_opt = model.inducing_points.numpy()[:,None]
+                trace_hyper = model.sample_optimal_variational_hyper_dist(200, 1, Z_opt)  
+                model.update_elbo_with_hyper_samples(mll, trace_hyper)
+      optimizer.step()
+    #return losses
 
-
-    # Test 
-    #test_x = torch.linspace(-8, 8, 1000)
-    #test_y = func(test_x)
+    # # Test 
+    test_x = torch.linspace(-8, 8, 1000)
+    test_y = func(test_x)
     
-    #y_star = model.posterior_predictive(test_x)
+    list_of_y_pred_dists = model.mixture_posterior_predictive(test_x, trace_hyper) ## a list of predictive dists.
     
-    # Visualise 
+    # ## Extracting list of means 
     
-    #model.visualise_posterior(test_x, y_star)
+    y_mix_loc = np.array([np.array(dist.loc) for dist in list_of_y_pred_dists])
+    y_mix_std = np.array([np.array(dist.covariance_matrix.diag().sqrt()) for dist in list_of_y_pred_dists])
+    y_mix_covar = [dist.covariance_matrix for dist in list_of_y_pred_dists]
     
-    # Compute metrics
-    #rmse = model.rmse(y_star, test_y)
-    #nll = model.neg_test_log_likelihood(y_star, test_y)
+    for i in np.arange(len(y_mix_covar)):
+        torch.linalg.cholesky(y_mix_covar[i] + torch.eye(1000)*1e-4)
+        
     
-
+    y_mix_std = np.nan_to_num(y_mix_std, nan=1e-5)
+    
+    skip_rows = np.unique(np.where(y_mix_std == 1e-5)[0])
+    y_mix_loc = np.delete(y_mix_loc, skip_rows, axis=0)
+    y_mix_std = np.delete(y_mix_std, skip_rows, axis=0)
+    y_mix_covar = np.delete(np.array(y_mix_covar), skip_rows, axis=0)
+    
+    # # Visualise 
+    from utils.visualisation import visualise_posterior
+    
+    visualise_posterior(model, test_x, test_y, list_of_y_pred_dists, mixture=True, title=None, new_fig=True)
+    
+    #Compute metrics
+    
+    from utils.metrics import rmse, nlpd_mixture
+    
+    y_std = torch.tensor([1.0]) ## did not scale y-values
+    
+    rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), test_y, y_std)
+    nll_test = nlpd_mixture(test_y, y_mix_loc, y_mix_std, num_mix=y_mix_loc.shape[0])
+    
+    # print('Test RMSE: ' + str(rmse_test))
+    # print('Test NLPD: ' + str(nll_test))
+    
 #  num_epochs = 100
  # losses = []
  # epochs_iter = tqdm.notebook.tqdm(range(num_epochs), desc="Epoch")

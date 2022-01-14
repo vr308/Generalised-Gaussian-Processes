@@ -12,6 +12,7 @@ from utils.posterior_predictive import get_posterior_predictive_means_stds, get_
 def visualise_mixture_posterior_samples(model, X_test, Y_test_pred_list, title=None, new_fig=False):
 
     ''' Visualising posterior predictive samples'''
+    
     if new_fig:
         plt.figure(figsize=(5,5))
     #f, ax = plt.subplots(1, 1, figsize=(8, 8))
@@ -46,7 +47,7 @@ def visualise_posterior(model, X_test, Y_test, Y_test_pred, mixture=True, title=
     plt.scatter(model.covar_module.inducing_points.detach(), [-2.5]*model.num_inducing, c='r', marker='x', label='Inducing')
     plt.fill_between(X_test.detach().numpy(), lower, upper, alpha=0.5, label=r'$\pm$2\sigma', color='g')
     plt.scatter(model.train_x.numpy(), model.train_y.numpy(), c='k', marker='x', alpha=0.7, label='Train')
-    plt.plot(X_test, Y_test, color='b', linestyle='dashed', alpha=0.7, labeL='True')
+    plt.plot(X_test, Y_test, color='b', linestyle='dashed', alpha=0.7, label='True')
     #ax.set_ylim([-3, 3])
     plt.legend(fontsize='small')
     plt.title(title)

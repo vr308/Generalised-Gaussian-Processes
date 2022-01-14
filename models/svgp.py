@@ -136,7 +136,7 @@ class StochasticVariationalGP(ApproximateGP):
 
 if __name__ == '__main__':
     
-    N = 100  # Number of training observations
+    N = 1000  # Number of training observations
 
     X = torch.randn(N) * 2 - 1  # X values
     Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
@@ -160,7 +160,7 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
     
     # Initial inducing points
-    index_inducing = np.random.randint(0,len(train_x), 10)
+    index_inducing = np.random.randint(0,len(train_x), 12)
     Z_init = train_x[index_inducing]
     
     likelihood = gpytorch.likelihoods.GaussianLikelihood()

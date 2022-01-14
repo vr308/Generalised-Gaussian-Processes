@@ -45,14 +45,13 @@ def nlpd(Y_test_pred, Y_test, Y_std):
       #new_dist = gpytorch.distributions.MultivariateNormal(mean=Y_test_pred.loc, covariance_matrix=Y_test_pred.covariance_matrix + 1e-2*torch.eye(len(Y_test)))
       lpd = Y_test_pred.log_prob(Y_test)
       # return the average
-      
-      avg_lpd_rescaled = torch.mean(lpd).detach()/len(Y_test) - torch.log(torch.Tensor(Y_std))
+      avg_lpd_rescaled = lpd.detach()/len(Y_test) - torch.log(torch.Tensor(Y_std))
       
       return -avg_lpd_rescaled
   
-def nlpd_mixture(Y_test, mix_means, mix_std):
+def nlpd_mixture(Y_test, mix_means, mix_std, num_mix):
       
-      mix = torch.distributions.Categorical(torch.ones(100,))
+      mix = torch.distributions.Categorical(torch.ones(num_mix,))
     
       lppd_per_point = []
       for i in np.arange(len(Y_test)):
@@ -62,4 +61,21 @@ def nlpd_mixture(Y_test, mix_means, mix_std):
       return -np.round(np.mean(lppd_per_point),3)
     
 
+def log_predictive_mixture_density(test_y, list_of_y_pred_dists):
+      
+      components = []
+      for i in np.arange(len(list_of_y_pred_dists)):
+            test_pred = list_of_y_pred_dists[i]
+            components.append(nlpd(test_pred, test_y, Y_std).detach().item())
+      return 
+  
 
+def negative_log_predictive_mixture_density(test_y, mix_means, y_mix_std):
+      
+      lppd_per_point = []
+      for i in np.arange(len(test_y)):
+            components = []
+            for j in np.arange(len(mix_means)):
+                  components.append(st.norm.logpdf(test_y[i], mix_means[:,i][j], y_mix_std[:,i][j]))
+            lppd_per_point.append(np.mean(components))
+      return -np.round(np.mean(np.log(lppd_per_point)),3)
