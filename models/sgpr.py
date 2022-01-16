@@ -110,7 +110,7 @@ class SparseGPR(gpytorch.models.ExactGP):
     
     #     return losses, trace_states
     
-    def train_model(self, optimizer, combine_terms=True, n_restarts=10, num_steps=1000):
+    def train_model(self, optimizer, combine_terms=True, n_restarts=10, max_steps=10000):
 
         self.train()
         self.likelihood.train()
@@ -121,7 +121,7 @@ class SparseGPR(gpytorch.models.ExactGP):
         #trace_states = []
         losses = []
 
-        for j in range(num_steps):
+        for j in range(max_steps):
               optimizer.zero_grad()
               output = self.forward(self.train_x)
               if combine_terms:
@@ -132,12 +132,15 @@ class SparseGPR(gpytorch.models.ExactGP):
               loss.backward()
               if j%1000 == 0:
                         print('Iter %d/%d - Loss: %.3f   outputscale: %.3f  lengthscale: %s   noise: %.3f ' % (
-                        j + 1, num_steps, loss.item(),
+                        j + 1, max_steps, loss.item(),
                         self.base_covar_module.outputscale.item(),
                         self.base_covar_module.base_kernel.lengthscale,
                         self.likelihood.noise.item()))
                         #self.covar_module.inducing_points[0:5]))
               optimizer.step()
+              if len(losses) > 2:
+                  if (losses[-2] - losses[-1] < 1e-5):
+                      break;
               #states = self.state_dict().copy()
               #trace_states = SparseGPR.optimization_trace(trace_states, states, grad_params)
               #hyper_trace_dict_i = {param_name: param for param_name, param in model_states[i] if 'covar_module' in param_name}
@@ -162,76 +165,77 @@ class SparseGPR(gpytorch.models.ExactGP):
 
 if __name__ == "__main__":
     
-    N = 1000  # Number of training observations
+    # N = 1000  # Number of training observations
 
-    X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+    # X = torch.randn(N) * 2 - 1  # X values
+    # Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
 
-    # Initial inducing points
-    Z_init = torch.randn(12)
+    # # Initial inducing points
+    # Z_init = torch.randn(12)
     
-    # Initialise model and likelihood
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    model = SparseGPR(X[:,None], Y, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+    # # Initialise model and likelihood
+    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    # model = SparseGPR(X[:,None], Y, likelihood, Z_init)
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
         
-    # Train
-    losses = model.train_model(optimizer, num_steps=5000)
+    # # Train
+    # losses = model.train_model(optimizer, num_steps=5000)
     
-    # # Test 
-    test_x = torch.linspace(-8, 8, 1000)
-    test_y = func(test_x)
+    # # # Test 
+    # test_x = torch.linspace(-8, 8, 1000)
+    # test_y = func(test_x)
     
-    ## predictions
-    test_pred = model.posterior_predictive(test_x)
+    # ## predictions
+    # test_pred = model.posterior_predictive(test_x)
     
-    from utils.metrics import rmse, nlpd
-    from utils.visualisation import visualise_posterior
+    # from utils.metrics import rmse, nlpd
+    # from utils.visualisation import visualise_posterior
     
-    y_std = torch.tensor([1.0]) ## did not scale y-values
+    # y_std = torch.tensor([1.0]) ## did not scale y-values
 
-    rmse_test = np.round(rmse(test_pred.loc, test_y,y_std).item(), 4)
-    nlpd_test = np.round(nlpd(test_pred, test_y, y_std).item(), 4)
+    # rmse_test = np.round(rmse(test_pred.loc, test_y,y_std).item(), 4)
+    # nlpd_test = np.round(nlpd(test_pred, test_y, y_std).item(), 4)
     
-    visualise_posterior(model, test_x, test_y, test_pred, mixture=False, title=None, new_fig=True)
+    # visualise_posterior(model, test_x, test_y, test_pred, mixture=False, title=None, new_fig=True)
 
 
     ########### Boston example
     
-    # from utils.experiment_tools import get_dataset_class
-    # import numpy as np
-    # from utils.metrics import rmse, nlpd
+    from utils.experiment_tools import get_dataset_class
+    import numpy as np
+    from utils.metrics import rmse, nlpd
 
-    # dataset = get_dataset_class('Boston')(split=0, prop=0.8)
-    # X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
+    dataset = get_dataset_class('Boston')(split=4, prop=0.8)
+    X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
-    # ###### Initialising model class, likelihood, inducing inputs ##########
+    ###### Initialising model class, likelihood, inducing inputs ##########
     
-    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    likelihood = gpytorch.likelihoods.PoissonLikelihood()
     
-    # ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
-    # #Z_init = torch.randn(num_inducing, input_dim)
-    # Z_init = X_train[np.random.randint(0,len(X_train), 100)]
+    ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
+    #Z_init = torch.randn(num_inducing, input_dim)
+    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
 
-    # model = SparseGPR(X_train, Y_train.flatten(), likelihood, Z_init)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    model = SparseGPR(X_train, Y_train.flatten(), likelihood, Z_init)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
-    # ####### Custom training depending on model class #########
+    ####### Custom training depending on model class #########
     
-    # losses = model.train_model(optimizer, num_steps=5000)
+    losses = model.train_model(optimizer, max_steps=10000)
     
-    # Y_train_pred = model.posterior_predictive(X_train)
-    # Y_test_pred = model.posterior_predictive(X_test)
+    #Y_train_pred = model.posterior_predictive(X_train)
+    Y_test_pred = model.posterior_predictive(X_test)
 
-    # # ### Compute Metrics  ###########
+    # ### Compute Metrics  ###########
     
-    # rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
-    # rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
+    #rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
+    rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
    
-    # # ### Convert everything back to float for Naval 
+    # ### Convert everything back to float for Naval 
     
-    # # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
-    # # nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
+    # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
+    # nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
 
 
 # Verify: elbo, q*(u), p(f*|y)

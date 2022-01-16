@@ -46,28 +46,15 @@ def nlpd(Y_test_pred, Y_test, Y_std):
       lpd = Y_test_pred.log_prob(Y_test)
       # return the average
       avg_lpd_rescaled = lpd.detach()/len(Y_test) - torch.log(torch.Tensor(Y_std))
-      
       return -avg_lpd_rescaled
   
-def nlpd_mixture(Y_test, mix_means, mix_std, num_mix):
-      
-      mix = torch.distributions.Categorical(torch.ones(num_mix,))
-    
-      lppd_per_point = []
-      for i in np.arange(len(Y_test)):
-            comp = torch.distributions.Normal(torch.tensor([mix_means[:,i]]), torch.tensor([mix_std[:,i]]))
-            gmm = torch.distributions.MixtureSameFamily(mix, comp)
-            lppd_per_point.append(gmm.log_prob(Y_test[i]).item())
-      return -np.round(np.mean(lppd_per_point),3)
-    
-
-def log_predictive_mixture_density(test_y, list_of_y_pred_dists):
+def nlpd_mixture(Y_test_pred_list, Y_test, Y_std):
       
       components = []
-      for i in np.arange(len(list_of_y_pred_dists)):
-            test_pred = list_of_y_pred_dists[i]
-            components.append(nlpd(test_pred, test_y, Y_std).detach().item())
-      return 
+      for i in np.arange(len(Y_test_pred_list)):
+            test_pred = Y_test_pred_list[i]
+            components.append(nlpd(test_pred, Y_test, Y_std).detach().item())
+      return np.mean(components)
   
 
 def negative_log_predictive_mixture_density(test_y, mix_means, y_mix_std):
@@ -79,3 +66,16 @@ def negative_log_predictive_mixture_density(test_y, mix_means, y_mix_std):
                   components.append(st.norm.logpdf(test_y[i], mix_means[:,i][j], y_mix_std[:,i][j]))
             lppd_per_point.append(np.mean(components))
       return -np.round(np.mean(np.log(lppd_per_point)),3)
+
+
+# def nlpd_mixture(Y_test, mix_means, mix_std, num_mix):
+      
+#       mix = torch.distributions.Categorical(torch.ones(num_mix,))
+    
+#       lppd_per_point = []
+#       for i in np.arange(len(Y_test)):
+#             comp = torch.distributions.Normal(torch.tensor([mix_means[:,i]]), torch.tensor([mix_std[:,i]]))
+#             gmm = torch.distributions.MixtureSameFamily(mix, comp)
+#             lppd_per_point.append(gmm.log_prob(Y_test[i]).item())
+#       return -np.round(np.mean(lppd_per_point),3)
+    

@@ -5,6 +5,85 @@
 
 """
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pymc3 as pm
+import theano
+import theano.tensor as tt
+
+# set the seed
+np.random.seed(1)
+
+n = 2000  # The number of data points
+X = 10 * np.sort(np.random.rand(n))[:, None]
+
+# Define the true covariance function and its parameters
+ℓ_true = 1.0
+η_true = 3.0
+cov_func = η_true ** 2 * pm.gp.cov.Matern52(1, ℓ_true)
+
+# A mean function that is zero everywhere
+mean_func = pm.gp.mean.Zero()
+
+# The latent function values are one sample from a multivariate normal
+# Note that we have to call `eval()` because PyMC3 built on top of Theano
+f_true = np.random.multivariate_normal(
+    mean_func(X).eval(), cov_func(X).eval() + 1e-8 * np.eye(n), 1
+).flatten()
+
+# The observed data is the latent function plus a small amount of IID Gaussian noise
+# The standard deviation of the noise is `sigma`
+σ_true = 2.0
+y = f_true + σ_true * np.random.randn(n)
+
+## Plot the data and the unobserved latent function
+fig = plt.figure(figsize=(12, 5))
+ax = fig.gca()
+ax.plot(X, f_true, "dodgerblue", lw=3, label="True f")
+ax.plot(X, y, "ok", ms=3, alpha=0.5, label="Data")
+ax.set_xlabel("X")
+ax.set_ylabel("The true f(x)")
+plt.legend();
+
+Xu_init = 10 * np.random.rand(20)
+
+with pm.Model() as model:
+    ℓ = pm.Gamma("ℓ", alpha=2, beta=1)
+    η = pm.HalfCauchy("η", beta=5)
+
+    cov = η ** 2 * pm.gp.cov.Matern52(1, ℓ)
+    gp = pm.gp.MarginalSparse(cov_func=cov, approx="VFE")
+
+    # initialize 20 inducing points with K-means
+    # gp.util
+    Xu = pm.Flat("Xu", shape=20, testval=Xu_init)
+
+    σ = pm.HalfCauchy("σ", beta=5)
+    y_ = gp.marginal_likelihood("y", X=X, Xu=Xu, y=y, noise=σ)
+
+    trace = pm.sample(tune=200, draws=100, chains=1)
+
+# add the GP conditional to the model, given the new X values
+with model:
+    f_pred = gp.conditional("f_pred", X_new)
+
+# To use the MAP values, you can just replace the trace with a length-1 list with `mp`
+with model:
+    pred_samples = pm.sample_posterior_predictive(trace, vars=[f_pred], samples=1000)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import math
 import torch
 import gpytorch

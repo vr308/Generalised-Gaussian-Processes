@@ -34,15 +34,13 @@ def parse_command_line_args() -> Namespace:
         nargs="*",
         help="Name of the log directories containing experimental results, format is e.g. Feb_12."
              "Specify more than one in case the experiment run overnight.",
-        default=["Dec_30", "Dec_31","Jan_01", "Jan_02", "Jan_03", "Jan_04"]
+        default=["Jan_01", "Jan_02", "Jan_03"]
     )
-
     return parser.parse_args()
 
 
 def get_dataset_class(dataset):
     return getattr(uci_datasets, dataset)
-
 
 def standard_error(x):
     return np.std(x) / np.sqrt(len(x))
