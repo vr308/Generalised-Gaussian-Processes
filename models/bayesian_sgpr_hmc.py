@@ -58,10 +58,10 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
        
        with pm.Model() as model:
            
-            ls = pm.Gamma("ls", alpha=2, beta=1, shape=(input_dim,))
+            ls = pm.Gamma("ls", alpha=2, beta=1)
             sig_f = pm.HalfCauchy("sig_f", beta=1)
         
-            cov = sig_f ** 2 * pm.gp.cov.ExpQuad(input_dim=input_dim, ls=ls)
+            cov = sig_f ** 2 * pm.gp.cov.ExpQuad(input_dim, ls=ls)
             gp = pm.gp.MarginalSparse(cov_func=cov, approx="VFE")
                 
             sig_n = pm.HalfCauchy("sig_n", beta=1)
@@ -109,7 +109,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
           self.freeze_kernel_hyperparameters()
           #print(elbo.model.base_covar_module.base_kernel.lengthscale)
           loss = -elbo(output, self.train_y)
-          losses.append(loss)
+          losses.append(loss.item())
           loss.backward()
           if i in break_for_hmc: ##== 0: ## alternate to hmc sampling of hypers
                     print('Iter %d/%d - Loss: %.3f   outputscale: %.3f lengthscale: %s noise: %.3f' % (
@@ -117,8 +117,8 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                     self.base_covar_module.outputscale.item(),
                     self.base_covar_module.base_kernel.lengthscale,
                     self.likelihood.noise.item()) + '\n')
-                    Z_opt = self.inducing_points.numpy()   #[:,None]
-                    trace_hyper = self.sample_optimal_variational_hyper_dist(10, self.data_dim, Z_opt)  
+                    Z_opt = self.inducing_points.numpy()[:,None]
+                    trace_hyper = self.sample_optimal_variational_hyper_dist(100, self.data_dim, Z_opt)  
                     optimal_hyper_index = self.find_optimal_hyper_from_trace(loss, elbo, output, trace_hyper)
                     if optimal_hyper_index is not None:
                         self.update_elbo_with_hyper_samples(elbo, trace_hyper[optimal_hyper_index])
@@ -144,29 +144,29 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
             y_star = self.likelihood(self(test_x))
         return y_star
     
-   # def mixture_posterior_predictive(self, test_x, trace_hyper):
-        
-   #      ''' Returns the posterior predictive multivariate normal '''
-        
-   #      self.eval()
-   #      self.likelihood.eval()
-   #      # Make predictions by feeding model through likelihood
-        
-   #      list_of_y_pred_dists = []
-   #      #for i in range(len(trace_hyper)):
-   #          self.likelihood.noise_covar.noise = trace_hyper['sig_n'][i]**2
-   #          self.base_covar_module.outputscale = trace_hyper['sig_f'][i]**2
-   #          self.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][i]
-    
-   #          with torch.no_grad():
-   #              pred = self.likelihood(self(test_x))
-   #              try:
-   #                  chol = torch.linalg.cholesky(pred.covariance_matrix)
-   #                  list_of_y_pred_dists.append(pred)
-   #              except RuntimeError:
-   #                  print('Not psd for ' + str(trace_hyper[i]) + ' ' + str(i))
-        
-   #      return list_of_y_pred_dists
+def mixture_posterior_predictive(model, test_x, trace_hyper):
+     
+      ''' Returns the posterior predictive multivariate normal '''
+     
+      model.eval()
+      model.likelihood.eval()
+      # Make predictions by feeding model through likelihood
+     
+      list_of_y_pred_dists = []
+      for i in range(len(trace_hyper)):
+         model.likelihood.noise_covar.noise = trace_hyper['sig_n'][i]**2
+         model.base_covar_module.outputscale = trace_hyper['sig_f'][i]**2
+         model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls'][i]
+ 
+      #with torch.no_grad():
+         pred = model.likelihood(model(test_x))
+       #       try:
+                  #chol = torch.linalg.cholesky(pred.covariance_matrix)
+         list_of_y_pred_dists.append(pred)
+      #        except RuntimeError:
+      #            print('Not psd for ' + str(trace_hyper[i]) + ' ' + str(i))
+     
+      return list_of_y_pred_dists
        
 if __name__ == '__main__':
     
@@ -184,7 +184,7 @@ if __name__ == '__main__':
     
     ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
     #Z_init = torch.randn(num_inducing, input_dim)
-    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
+    Z_init = X_train[np.random.randint(0,len(X_train), 50)]
 
     model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)

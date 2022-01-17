@@ -16,12 +16,12 @@ def visualise_mixture_posterior_samples(model, X_test, Y_test_pred_list, title=N
     if new_fig:
         plt.figure(figsize=(5,5))
     #f, ax = plt.subplots(1, 1, figsize=(8, 8))
-    for y_star in Y_test_pred_list[::10]:
-        plt.plot(X_test.numpy(), y_star.mean.numpy(), c='magenta', alpha=0.2)
-        plt.plot(model.covar_module.inducing_points.detach(), [-2.5]*model.num_inducing, 'rx')
+    for y_star in Y_test_pred_list[::2]:
+        plt.plot(X_test.numpy(), y_star.mean.detach().numpy(), c='magenta', alpha=0.2)
+        #plt.plot(model.covar_module.inducing_points.detach(), [-2.5]*model.num_inducing, 'rx')
         lower, upper = y_star.confidence_region()
         plt.fill_between(X_test.detach().numpy(), lower.detach().numpy(), upper.detach().numpy(), alpha=0.1, color='blue')
-    plt.legend(['Mean', 'Inducing inputs', r'$\pm$2\sigma'])
+    plt.legend(['Mean', r'$\pm$2\sigma'])
 
 
 def visualise_posterior(model, X_test, Y_test, Y_test_pred, mixture=True, title=None, new_fig=False):

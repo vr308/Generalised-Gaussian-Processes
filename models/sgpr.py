@@ -138,9 +138,9 @@ class SparseGPR(gpytorch.models.ExactGP):
                         self.likelihood.noise.item()))
                         #self.covar_module.inducing_points[0:5]))
               optimizer.step()
-              if len(losses) > 2:
-                  if (losses[-2] - losses[-1] < 1e-5):
-                      break;
+              #if len(losses) > 2:
+              #    if (losses[-2] - losses[-1] < 1e-5):
+              #        break;
               #states = self.state_dict().copy()
               #trace_states = SparseGPR.optimization_trace(trace_states, states, grad_params)
               #hyper_trace_dict_i = {param_name: param for param_name, param in model_states[i] if 'covar_module' in param_name}
