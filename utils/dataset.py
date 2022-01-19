@@ -44,7 +44,7 @@ def add_regression(C):
     _ALL_REGRESSION_DATATSETS.update({C.name:C})
     return C
 
-def add_classficiation(C):
+def add_classification(C):
     _ALL_CLASSIFICATION_DATATSETS.update({C.name:C})
     return C
 
@@ -250,7 +250,14 @@ class PineSaplings(Dataset):
             data = pandas.read_csv(self.datapath, index_col=0).values[:-1,:]
             return data[:, :-1], data[:, -1].reshape(-1, 1)
         
-        
+@add_classification
+class Banana(Dataset):
+    N, D, name = 5300, 2, 'banana'
+    filename = 'banana.csv'
+    
+    def read_data(self):
+            data = pandas.read_csv(self.datapath, index_col=0).values[:-1,:]
+            return data[:, :-1], data[:, -1].reshape(-1, 1)        
 ##########################
 
 class Classification(Dataset):
@@ -284,17 +291,22 @@ class Classification(Dataset):
 
 
     def read_data(self):
-        datapath = os.path.join(DATA_PATH, 'classification_data', self.name, self.name + '_R.dat')
-        if os.path.isfile(datapath):
-            data = np.array(pandas.read_csv(datapath, header=0, delimiter='\t').values).astype(float)
+        if self.name == 'banana':
+            datapath = os.path.join(DATA_PATH, 'classification_data', self.name, 'banana.csv')
+            data = pandas.read_csv(datapath, index_col=None)
+            data = np.array(data.replace(to_replace=-1, value=0, inplace=False).values).astype(float)
         else:
-            data_path1 = os.path.join(DATA_PATH, 'classification_data', self.name, self.name + '_train_R.dat')
-            data1 = np.array(pandas.read_csv(data_path1, header=0, delimiter='\t').values).astype(float)
-
-            data_path2 = os.path.join(DATA_PATH, 'classification_data', self.name, self.name + '_test_R.dat')
-            data2 = np.array(pandas.read_csv(data_path2, header=0, delimiter='\t').values).astype(float)
-
-            data = np.concatenate([data1, data2], 0)
+            datapath = os.path.join(DATA_PATH, 'classification_data', self.name, self.name + '_R.dat')
+            if os.path.isfile(datapath):
+                data = np.array(pandas.read_csv(datapath, header=0, delimiter='\t').values).astype(float)
+            else:
+                data_path1 = os.path.join(DATA_PATH, 'classification_data', self.name, self.name + '_train_R.dat')
+                data1 = np.array(pandas.read_csv(data_path1, header=0, delimiter='\t').values).astype(float)
+    
+                data_path2 = os.path.join(DATA_PATH, 'classification_data', self.name, self.name + '_test_R.dat')
+                data2 = np.array(pandas.read_csv(data_path2, header=0, delimiter='\t').values).astype(float)
+    
+                data = np.concatenate([data1, data2], 0)
 
         return data[:, :-1], data[:, -1].reshape(-1, 1)
 
@@ -414,10 +426,11 @@ classification_datasets = [
     ['vertebral-column-3clases', 310, 7, 3],
     ['breast-cancer', 286, 10, 2],
     ['abalone', 4177, 9, 3],
+    ['banana', 5300, 2, 3]
 ]
 
 for name, N, D, K in classification_datasets:
-    @add_classficiation
+    @add_classification
     class C(Classification):
         name, N, D, K = name, N, D, K
 
@@ -439,6 +452,6 @@ def get_classification_data(name, *args, **kwargs):
 
 ## Usage
 
-data = get_regression_data('coal')
-#data = get_classification_data('pine')
+#data = get_regression_data('coal')
+data = get_classification_data('banana')
 

@@ -6,8 +6,6 @@ Reference: Michalis Titsias 2009, Sparse Gaussian processes using inducing point
 
 """
 
-#TODO: Implement re-starts within the class
-
 import gpytorch
 import torch
 import numpy as np
@@ -15,6 +13,8 @@ from gpytorch.means import ZeroMean
 from gpytorch.kernels import ScaleKernel, RBFKernel, InducingPointKernel
 from gpytorch.distributions import MultivariateNormal
 #from utils.metrics import get_trainable_param_names
+torch.manual_seed(45)
+np.random.seed(37)
 
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
@@ -205,13 +205,13 @@ if __name__ == "__main__":
     import numpy as np
     from utils.metrics import rmse, nlpd
 
-    dataset = get_dataset_class('Boston')(split=4, prop=0.8)
+    dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
     ###### Initialising model class, likelihood, inducing inputs ##########
     
     likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    likelihood = gpytorch.likelihoods.PoissonLikelihood()
+    #likelihood = gpytorch.likelihoods.PoissonLikelihood()
     
     ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
     #Z_init = torch.randn(num_inducing, input_dim)

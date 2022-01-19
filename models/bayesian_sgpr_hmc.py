@@ -19,6 +19,8 @@ import matplotlib.pyplot as plt
 import scipy.stats as st
 import pymc3 as pm
 
+torch.manual_seed(45)
+np.random.seed(37)
 
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
@@ -28,7 +30,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
    """ The sparse GP class for regression with the doubly 
         collapsed stochastic bound.
         q(u) is implicit 
-        theta is sampled using HMC every 200 iterations
+        theta is sampled using HMC based on pre-specified intervals
    """
       
    def __init__(self, train_x, train_y, likelihood, Z_init):
@@ -58,7 +60,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
        
        with pm.Model() as model:
            
-            ls = pm.Gamma("ls", alpha=2, beta=1)
+            ls = pm.Gamma("ls", alpha=2, beta=1, shape=(input_dim,))
             sig_f = pm.HalfCauchy("sig_f", beta=1)
         
             cov = sig_f ** 2 * pm.gp.cov.ExpQuad(input_dim, ls=ls)
@@ -69,7 +71,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
             # Z_opt is the intermediate inducing points from the optimisation stage
             y_ = gp.marginal_likelihood("y", X=self.train_x.numpy(), Xu=Z_opt, y=self.train_y.numpy(), noise=sig_n)
         
-            trace = pm.sample(n_samples, tune=50, chains=1)
+            trace = pm.sample(n_samples, tune=500, chains=1)
         
        return trace
    
@@ -89,9 +91,11 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                elbos_from_trace.append(-elbo(output, self.train_y))
             
            ## Check if the best elbo is better than the loss at this juncture
-           min_elbo = np.argmin(elbos_from_trace)
+           min_elbo_index = np.argmin(elbos_from_trace)
+           min_elbo = elbos_from_trace[min_elbo_index]
+           
            if min_elbo < loss:
-                return min_elbo
+                return min_elbo_index
            else: 
                 return None
                
@@ -103,21 +107,22 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         elbo = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
         
         losses = []
-        for i in range(max_steps):
+        for n_iter in range(max_steps):
           optimizer.zero_grad()
           output = self(self.train_x)
-          self.freeze_kernel_hyperparameters()
-          #print(elbo.model.base_covar_module.base_kernel.lengthscale)
+          if n_iter < break_for_hmc[-1]:
+              self.freeze_kernel_hyperparameters()
           loss = -elbo(output, self.train_y)
           losses.append(loss.item())
           loss.backward()
-          if i in break_for_hmc: ##== 0: ## alternate to hmc sampling of hypers
+          optimizer.step()
+          if n_iter in break_for_hmc: ##== 0: ## alternate to hmc sampling of hypers
                     print('Iter %d/%d - Loss: %.3f   outputscale: %.3f lengthscale: %s noise: %.3f' % (
-                    i + 1, max_steps, loss.item(),
+                    n_iter + 1, max_steps, loss.item(),
                     self.base_covar_module.outputscale.item(),
                     self.base_covar_module.base_kernel.lengthscale,
                     self.likelihood.noise.item()) + '\n')
-                    Z_opt = self.inducing_points.numpy()[:,None]
+                    Z_opt = self.inducing_points.numpy()#[:,None]
                     trace_hyper = self.sample_optimal_variational_hyper_dist(100, self.data_dim, Z_opt)  
                     optimal_hyper_index = self.find_optimal_hyper_from_trace(loss, elbo, output, trace_hyper)
                     if optimal_hyper_index is not None:
@@ -125,7 +130,6 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                         print('Optimal hypers found in this round')
                     else:
                         print('No optimal hypers found - continue with optimisation')
-          optimizer.step()
         return losses, trace_hyper
                
    def optimal_q_u(self):
@@ -170,12 +174,11 @@ def mixture_posterior_predictive(model, test_x, trace_hyper):
        
 if __name__ == '__main__':
     
-    torch.manual_seed(13037762642999675754)
     
     from utils.experiment_tools import get_dataset_class
     from utils.metrics import rmse, nlpd_mixture, nlpd
 
-    dataset = get_dataset_class('Power')(split=0, prop=0.8)
+    dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
     ###### Initialising model class, likelihood, inducing inputs ##########
@@ -184,20 +187,20 @@ if __name__ == '__main__':
     
     ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
     #Z_init = torch.randn(num_inducing, input_dim)
-    Z_init = X_train[np.random.randint(0,len(X_train), 50)]
+    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
 
     model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
     ####### Custom training depending on model class #########
     
-    break_for_hmc = [200,500,1500,2000,2999]
-    losses, trace_hyper = model.train_model(optimizer, max_steps=3000, break_for_hmc=break_for_hmc)
+    break_for_hmc = [200,500,700,1500,2000,2500]
+    losses, trace_hyper = model.train_model(optimizer, max_steps=4000, break_for_hmc=break_for_hmc)
     
-    loss_list = [x.detach().item() for x in losses]
+    loss_greedy_protocol = losses
     
     plt.figure()
-    plt.plot(loss_list)
+    plt.plot(loss_greedy_protocol)
     
     Y_test_pred = model.posterior_predictive(X_test)
 
@@ -213,6 +216,8 @@ if __name__ == '__main__':
     
     print('Test RMSE: ' + str(rmse_test))
     print('Test NLPD: ' + str(nlpd_test))
+    
+    
     
     ############ Mixture stuff
     

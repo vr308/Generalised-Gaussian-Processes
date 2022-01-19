@@ -13,7 +13,7 @@ from math import floor
 from tqdm import tqdm
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
-from gpytorch.variational import VariationalStrategy
+from gpytorch.variational import VariationalStrategy, MultitaskVariationalStrategy
 from gpytorch.means import ZeroMean
 from torch.utils.data import TensorDataset, DataLoader
 from utils.metrics import rmse, nlpd
@@ -35,7 +35,12 @@ class StochasticVariationalGP(ApproximateGP):
         self.num_inducing = len(Z_init)
         # Sparse Variational Formulation
         q_u = CholeskyVariationalDistribution(self.num_inducing)
-        q_f = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
+        
+        if Z_init.shape[1] > 1: ## we are probably doing multi-class classification
+            base_variational_strategy = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
+            q_f = MultitaskVariationalStrategy(base_variational_strategy, num_tasks=3)
+        else:
+            q_f = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
         super(StochasticVariationalGP, self).__init__(q_f)
         self.likelihood = likelihood
         self.train_x = train_x
