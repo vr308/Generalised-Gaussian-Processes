@@ -5,11 +5,11 @@ Doubly collapsed SGPR with HMC
 
 """
 #TODO: Mixture Posterior Predictive
-#TODO: Only assigning lengthscale from hmc samples as a MWE (need to write a function to assign)
 
 import gpytorch 
 import torch
 import numpy as np
+import copy
 from prettytable import PrettyTable
 from gpytorch.means import ConstantMean, ZeroMean
 from gpytorch.kernels import ScaleKernel, RBFKernel, InducingPointKernel
@@ -75,11 +75,20 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         
        return trace
    
-   def update_elbo_with_hyper_samples(self, elbo, trace_hyper):
+   def return_elbo_at_hyper(self, elbo, trace_hyper):
        
-       elbo.likelihood.noise_covar.noise = trace_hyper['sig_n']**2
-       elbo.model.base_covar_module.outputscale = trace_hyper['sig_f']**2
-       elbo.model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls']
+       elbo_update = copy.deepcopy(elbo)
+       
+       elbo_update.likelihood.noise_covar.noise = trace_hyper['sig_n']**2
+       elbo_update.model.base_covar_module.outputscale = trace_hyper['sig_f']**2
+       elbo_update.model.base_covar_module.base_kernel.lengthscale = trace_hyper['ls']
+       
+       return elbo_update
+   
+   def compute_average_elbo_over_trace_hypers(self, trace_elbos, output):
+      
+      loss_per_elbo = [elbo(output, self.train_y) for elbo in trace_elbos]
+      return torch.mean(torch.stack(loss_per_elbo), dim=0)
        
    def find_optimal_hyper_from_trace(self, loss, elbo, output, trace_hyper):
        
@@ -100,23 +109,37 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                 return None
                
                
-   def train_model(self, optimizer, max_steps=10000, break_for_hmc=[500,1000]):
+   def train_model(self, optimizer, max_steps=10000, break_for_hmc=[200,500,1000,1500]):
 
         self.train()
         self.likelihood.train()
         elbo = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
         
         losses = []
+        trace_elbos = None
+        
         for n_iter in range(max_steps):
+            
           optimizer.zero_grad()
+          
+          ## Forward-pass
           output = self(self.train_x)
-          if n_iter < break_for_hmc[-1]:
-              self.freeze_kernel_hyperparameters()
-          loss = -elbo(output, self.train_y)
+          
+          ## Make sure to always freeze hypers before optimising for inducing locations
+          self.freeze_kernel_hyperparameters()
+        
+          ## Compute average over elbos after the first round of sampling 
+          if trace_elbos is not None:
+              loss = -self.compute_average_elbo_over_trace_hypers(trace_elbos, output)
+              print('Avg Loss from trace ' + str(loss.item()))
+          else:
+              loss = -elbo(output, self.train_y)
           losses.append(loss.item())
           loss.backward()
           optimizer.step()
-          if n_iter in break_for_hmc: ##== 0: ## alternate to hmc sampling of hypers
+          
+          if n_iter in break_for_hmc: ## alternate to hmc sampling of hypers
+                    print('---------------HMC step start------------------------------')
                     print('Iter %d/%d - Loss: %.3f   outputscale: %.3f lengthscale: %s noise: %.3f' % (
                     n_iter + 1, max_steps, loss.item(),
                     self.base_covar_module.outputscale.item(),
@@ -124,12 +147,11 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                     self.likelihood.noise.item()) + '\n')
                     Z_opt = self.inducing_points.numpy()#[:,None]
                     trace_hyper = self.sample_optimal_variational_hyper_dist(100, self.data_dim, Z_opt)  
-                    optimal_hyper_index = self.find_optimal_hyper_from_trace(loss, elbo, output, trace_hyper)
-                    if optimal_hyper_index is not None:
-                        self.update_elbo_with_hyper_samples(elbo, trace_hyper[optimal_hyper_index])
-                        print('Optimal hypers found in this round')
-                    else:
-                        print('No optimal hypers found - continue with optimisation')
+                    #optimal_hyper_index = self.find_optimal_hyper_from_trace(loss, elbo, output, trace_hyper)
+                    print('---------------HMC step finish------------------------------')
+                    trace_elbos = []
+                    for i in range(len(trace_hyper)):
+                        trace_elbos.append(self.return_elbo_at_hyper(elbo, trace_hyper[i]))
         return losses, trace_hyper
                
    def optimal_q_u(self):
@@ -194,28 +216,28 @@ if __name__ == '__main__':
     
     ####### Custom training depending on model class #########
     
-    break_for_hmc = [200,500,700,1500,2000,2500]
+    break_for_hmc = [200,500,700,1500,2000,2500, 2999]
     losses, trace_hyper = model.train_model(optimizer, max_steps=4000, break_for_hmc=break_for_hmc)
     
-    loss_greedy_protocol = losses
+    # loss_greedy_protocol = losses
     
-    plt.figure()
-    plt.plot(loss_greedy_protocol)
+    # plt.figure()
+    # plt.plot(loss_greedy_protocol)
     
-    Y_test_pred = model.posterior_predictive(X_test)
+    # Y_test_pred = model.posterior_predictive(X_test)
 
-    # ### Compute Metrics ###########
+    # # ### Compute Metrics ###########
     
-    #rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
-    rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
+    # #rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
+    # rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
    
     # ### Convert everything back to float for Naval 
     
     # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
-    nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
+    # nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
     
-    print('Test RMSE: ' + str(rmse_test))
-    print('Test NLPD: ' + str(nlpd_test))
+    # print('Test RMSE: ' + str(rmse_test))
+    # print('Test NLPD: ' + str(nlpd_test))
     
     
     
