@@ -75,7 +75,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         
        return trace
    
-   def return_elbo_at_hyper(self, elbo, trace_hyper):
+   def return_elbo_and_output_at_hyper(self, elbo, trace_hyper):
        
        elbo_update = copy.deepcopy(elbo)
        
@@ -85,9 +85,9 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
        
        return elbo_update
    
-   def compute_average_elbo_over_trace_hypers(self, trace_elbos, output):
+   def compute_average_elbo_over_trace_hypers(self, trace_elbos, trace_outputs):
       
-      loss_per_elbo = [elbo(output, self.train_y) for elbo in trace_elbos]
+      loss_per_elbo = [elbo(output, self.train_y) for elbo, output in zip(trace_elbos, trace_outputs)]
       return torch.mean(torch.stack(loss_per_elbo), dim=0)
        
    def find_optimal_hyper_from_trace(self, loss, elbo, output, trace_hyper):
@@ -122,36 +122,40 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
             
           optimizer.zero_grad()
           
-          ## Forward-pass
-          output = self(self.train_x)
-          
           ## Make sure to always freeze hypers before optimising for inducing locations
           self.freeze_kernel_hyperparameters()
-        
-          ## Compute average over elbos after the first round of sampling 
-          if trace_elbos is not None:
-              loss = -self.compute_average_elbo_over_trace_hypers(trace_elbos, output)
-              print('Avg Loss from trace ' + str(loss.item()))
-          else:
+
+          if n_iter <= break_for_hmc[0]: ## the iterations before sampling (no sampling has occured, just optimise as normal)
+          
+              ## Forward-pass
+              output = self(self.train_x)
               loss = -elbo(output, self.train_y)
+        
+          else:
+              ## Compute the outputs per model from trace_elbos and the stochastic loss
+              trace_outputs = [x.model(self.train_x) for x in trace_elbos] 
+              loss = -self.compute_average_elbo_over_trace_hypers(trace_elbos, trace_outputs)
+              print('Avg Loss from trace ' + str(loss.item()))
+              
           losses.append(loss.item())
           loss.backward()
           optimizer.step()
           
           if n_iter in break_for_hmc: ## alternate to hmc sampling of hypers
                     print('---------------HMC step start------------------------------')
-                    print('Iter %d/%d - Loss: %.3f   outputscale: %.3f lengthscale: %s noise: %.3f' % (
-                    n_iter + 1, max_steps, loss.item(),
-                    self.base_covar_module.outputscale.item(),
-                    self.base_covar_module.base_kernel.lengthscale,
-                    self.likelihood.noise.item()) + '\n')
+                    print('Iter %d/%d - Loss: %.3f ' % (  #outputscale: %.3f lengthscale: %s noise: %.3f'
+                    n_iter + 1, max_steps, loss.item()) + '\n'),
+                    #self.base_covar_module.outputscale.item(),
+                    #self.base_covar_module.base_kernel.lengthscale,
+                    #self.likelihood.noise.item()) + '\n')
                     Z_opt = self.inducing_points.numpy()#[:,None]
                     trace_hyper = self.sample_optimal_variational_hyper_dist(100, self.data_dim, Z_opt)  
                     #optimal_hyper_index = self.find_optimal_hyper_from_trace(loss, elbo, output, trace_hyper)
                     print('---------------HMC step finish------------------------------')
+                    
                     trace_elbos = []
                     for i in range(len(trace_hyper)):
-                        trace_elbos.append(self.return_elbo_at_hyper(elbo, trace_hyper[i]))
+                        trace_elbos.append(self.return_elbo_and_output_at_hyper(elbo, trace_hyper[i]))
         return losses, trace_hyper
                
    def optimal_q_u(self):

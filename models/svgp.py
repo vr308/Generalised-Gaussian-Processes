@@ -27,7 +27,7 @@ class StochasticVariationalGP(ApproximateGP):
          The parameters of q(u) \sim N(m, S) are learnt numerically.
     """
 
-    def __init__(self, train_x, train_y, likelihood, Z_init):
+    def __init__(self, train_x, train_y, likelihood, Z_init, num_tasks=None):
 
         # Locations Z corresponding to u, they can be randomly initialized or
         # regularly placed.
@@ -35,10 +35,13 @@ class StochasticVariationalGP(ApproximateGP):
         self.num_inducing = len(Z_init)
         # Sparse Variational Formulation
         q_u = CholeskyVariationalDistribution(self.num_inducing)
+        self.num_tasks = num_tasks
         
-        if Z_init.shape[1] > 1: ## we are probably doing multi-class classification
+        try:
+            likelihood.noise
+        except AttributeError:
             base_variational_strategy = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
-            q_f = MultitaskVariationalStrategy(base_variational_strategy, num_tasks=3)
+            q_f = MultitaskVariationalStrategy(base_variational_strategy, num_tasks=self.num_tasks)
         else:
             q_f = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
         super(StochasticVariationalGP, self).__init__(q_f)
@@ -47,7 +50,6 @@ class StochasticVariationalGP(ApproximateGP):
         self.train_y = train_y
 
         self.mean_module = ZeroMean()
-        #self.base_covar_module = ScaleKernel(RBFKernel())
         self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=train_x.shape[-1]))
 
     def forward(self, x):
@@ -101,9 +103,9 @@ class StochasticVariationalGP(ApproximateGP):
                       
                       output = self(x_batch)
                       if combine_terms:
-                          loss = -mll(output, y_batch)
+                          loss = -mll(output, y_batch).sum()
                       else:
-                          loss = -self.elbo(output, y_batch)
+                          loss = -self.elbo(output, y_batch).sum()
                       losses.append(loss.item())
                       loss.backward()
                       

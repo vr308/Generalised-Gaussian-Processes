@@ -453,5 +453,5 @@ def get_classification_data(name, *args, **kwargs):
 ## Usage
 
 #data = get_regression_data('coal')
-data = get_classification_data('banana')
+#data = get_classification_data('banana')
 

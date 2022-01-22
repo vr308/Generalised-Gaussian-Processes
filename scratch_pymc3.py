@@ -16,6 +16,7 @@ import numpy as np
 from torch.utils.data import TensorDataset, DataLoader
 from models.svgp import StochasticVariationalGP
 from models.bayesian_svgp import BayesianStochasticVariationalGP
+from torch.optim.lr_scheduler import MultiStepLR
 import matplotlib.pyplot as plt
 import scipy.stats as st
 import pymc3 as pm
@@ -43,16 +44,21 @@ if __name__ == '__main__':
   # Initial inducing points
   Z_init = X_train[np.random.randint(0,len(X_train), num_inducing)]
 
-  likelihood = gpytorch.likelihoods.SoftmaxLikelihood(num_classes=dataset.K, mixing_weights=False)
-  model = StochasticVariationalGP(X_train, Y_train, likelihood, Z_init).double()
+  #likelihood = gpytorch.likelihoods.SoftmaxLikelihood(num_classes=2, mixing_weights=False)
+  likelihood = gpytorch.likelihoods.BernoulliLikelihood()
+  
+  model = StochasticVariationalGP(X_train, Y_train, likelihood, Z_init, num_tasks=1).double()
   optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+  
+  num_epochs = 50
+  scheduler = MultiStepLR(optimizer, milestones=[0.5 * num_epochs, 0.75 * num_epochs], gamma=0.1)
     
   # Train
   losses = model.train_model(optimizer, train_loader,
                                 minibatch_size=100, num_epochs=50,  combine_terms=True)
      
    #Y_train_pred = model.posterior_predictive(X_train)
-   f_test_pred = model.posterior_predictive(X_test)
+  f_test_pred = model.posterior_predictive(X_test)
    
 
   # ### Compute Metrics  ###########

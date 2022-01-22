@@ -24,7 +24,61 @@ from gpytorch.mlls.added_loss_term import AddedLossTerm
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
 
-class LogHyperVariationalDist(gpytorch.Module):
+class VariationalDenseLatentVariable(LatentVariable):
+    
+    def __init__(self, X_init, prior_x, data_dim):
+        n, latent_dim = X_init.shape
+        super().__init__(n, latent_dim)
+        
+        self.data_dim = data_dim
+        self.prior_x = prior_x
+        # G: there might be some issues here if someone calls .cuda() on their BayesianGPLVM
+        # after initializing on the CPU
+
+        # Local variational params per latent point with dimensionality latent_dim
+        self.q_mu = torch.nn.Parameter(X_init.cuda()) # (.cuda())
+        self.q_log_sigma = torch.nn.Parameter(torch.randn(n, latent_dim**2).cuda())    # .cuda()
+        
+        jitter = torch.eye(latent_dim).unsqueeze(0)*1e-5
+        
+        if torch.cuda.is_available():
+            
+            self.q_mu = self.q_mu.cuda()
+            self.q_log_sigma = self.q_log_sigma.cuda()
+            self.jitter = torch.cat([jitter for i in range(n)], axis=0).cuda()
+        
+        # This will add the KL divergence KL(q(X) || p(X)) to the loss
+        self.register_added_loss_term("x_kl")
+        
+        #jitter = torch.eye(latent_dim).unsqueeze(0)*1e-5
+        #self.jitter = torch.cat([jitter for i in range(n)], axis=0)
+        
+    def sigma(self):
+       sg = self.q_log_sigma
+       sg = sg.reshape(len(sg), self.latent_dim, self.latent_dim)
+       sg = torch.einsum('aij,akj->aik', sg, sg)
+       sg += self.jitter
+       return sg   
+
+    def forward(self, batch_idx=None):
+        
+        self.q_sigma = self.sigma()
+        
+        if batch_idx is None:
+            batch_idx = np.arange(self.n) 
+        
+        q_mu_batch = self.q_mu[batch_idx, ...]
+        q_sigma_batch = self.q_sigma[batch_idx, ...]
+
+        q_x = torch.distributions.MultivariateNormal(q_mu_batch, q_sigma_batch)
+
+        self.prior_x.loc = self.prior_x.loc[:len(batch_idx), ...]
+        self.prior_x.scale = self.prior_x.covariance_matrix[:len(batch_idx), ...]
+        x_kl = kl_gaussian_loss_term(q_x, self.prior_x, len(batch_idx), self.data_dim)        
+        self.update_added_loss_term('x_kl', x_kl)
+        return q_x.rsample()
+
+class LogMultivariateHyperDist(gpytorch.Module):
     
      def __init__(self, hyper_dim, hyper_prior, n, data_dim):
         super().__init__()
@@ -41,8 +95,17 @@ class LogHyperVariationalDist(gpytorch.Module):
         self.register_added_loss_term("theta_kl")
 
      def forward(self, num_samples):
+         
+        self.q_sigma = self.sigma()
+        
+        if batch_idx is None:
+            batch_idx = np.arange(self.n) 
+        
+        q_mu_batch = self.q_mu[batch_idx, ...]
+        q_sigma_batch = self.q_sigma[batch_idx, ...]
+         
         # Variational distribution over the hyper variable q(theta)
-        q_theta = torch.distributions.Normal(self.q_mu, self.q_log_sigma.exp())
+        q_theta = torch.distributions.MultivariateNormal(q_mu_batch, q_sigma_batch)
         theta_kl = kl_gaussian_loss_term(q_theta, self.hyper_prior, self.n, self.data_dim)
         self.update_added_loss_term('theta_kl', theta_kl)  # Update the KL term
         return q_theta.rsample(sample_shape=torch.Size([num_samples]))
