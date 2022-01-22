@@ -24,90 +24,55 @@ from gpytorch.mlls.added_loss_term import AddedLossTerm
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
 
-class VariationalDenseLatentVariable(LatentVariable):
+class VariationalHyperDist(torch.nn.Module):
     
-    def __init__(self, X_init, prior_x, data_dim):
-        n, latent_dim = X_init.shape
-        super().__init__(n, latent_dim)
-        
-        self.data_dim = data_dim
-        self.prior_x = prior_x
-        # G: there might be some issues here if someone calls .cuda() on their BayesianGPLVM
-        # after initializing on the CPU
-
-        # Local variational params per latent point with dimensionality latent_dim
-        self.q_mu = torch.nn.Parameter(X_init.cuda()) # (.cuda())
-        self.q_log_sigma = torch.nn.Parameter(torch.randn(n, latent_dim**2).cuda())    # .cuda()
-        
-        jitter = torch.eye(latent_dim).unsqueeze(0)*1e-5
-        
-        if torch.cuda.is_available():
-            
-            self.q_mu = self.q_mu.cuda()
-            self.q_log_sigma = self.q_log_sigma.cuda()
-            self.jitter = torch.cat([jitter for i in range(n)], axis=0).cuda()
-        
-        # This will add the KL divergence KL(q(X) || p(X)) to the loss
-        self.register_added_loss_term("x_kl")
-        
-        #jitter = torch.eye(latent_dim).unsqueeze(0)*1e-5
-        #self.jitter = torch.cat([jitter for i in range(n)], axis=0)
-        
-    def sigma(self):
-       sg = self.q_log_sigma
-       sg = sg.reshape(len(sg), self.latent_dim, self.latent_dim)
-       sg = torch.einsum('aij,akj->aik', sg, sg)
-       sg += self.jitter
-       return sg   
-
-    def forward(self, batch_idx=None):
-        
-        self.q_sigma = self.sigma()
-        
-        if batch_idx is None:
-            batch_idx = np.arange(self.n) 
-        
-        q_mu_batch = self.q_mu[batch_idx, ...]
-        q_sigma_batch = self.q_sigma[batch_idx, ...]
-
-        q_x = torch.distributions.MultivariateNormal(q_mu_batch, q_sigma_batch)
-
-        self.prior_x.loc = self.prior_x.loc[:len(batch_idx), ...]
-        self.prior_x.scale = self.prior_x.covariance_matrix[:len(batch_idx), ...]
-        x_kl = kl_gaussian_loss_term(q_x, self.prior_x, len(batch_idx), self.data_dim)        
-        self.update_added_loss_term('x_kl', x_kl)
-        return q_x.rsample()
-
-class LogMultivariateHyperDist(gpytorch.Module):
-    
-     def __init__(self, hyper_dim, hyper_prior, n, data_dim):
+    def __init__(self, hyper_dim, hyper_prior, n, input_dim):
         super().__init__()
         
         self.hyper_dim = hyper_dim
         self.hyper_prior = hyper_prior
         self.n = n
-        self.data_dim = data_dim
+        self.input_dim = input_dim
+        
+        num_elements_cholesky = hyper_dim*(hyper_dim + 1)/2
 
         # Global variational params
         self.q_mu = torch.nn.Parameter(torch.randn(hyper_dim))
-        self.q_log_sigma = torch.nn.Parameter(torch.randn(hyper_dim))     
+        self.q_sigma_vec = torch.nn.Parameter(torch.randn(num_elements_cholesky))
+        
+        self.jitter = torch.eye(hyper_dim).unsqueeze(0)*1e-5
+
         # This will add the KL divergence KL(q(theta) || p(theta)) to the loss
         self.register_added_loss_term("theta_kl")
+        
+    def construct_sigma(self):
+       
+       row_ids, col_ids = torch.tril_indices(self.hyper_dim, self.hyper_dim)
+       lower_sigma = torch.eye(self.hyper_dim)
+       k = 0
+       for i,j in zip(row_ids, col_ids):
+               lower_sigma[i,j] = self.q_sigma_vec[k]
+               k +=1
+       sigma = torch.matmul(lower_sigma, lower_sigma.T)
+       sigma += self.jitter
+       return sigma  
 
-     def forward(self, num_samples):
-         
-        self.q_sigma = self.sigma()
+    def forward(self, num_samples, batch_idx=None):
+        
+        self.q_sigma = self.construct_sigma()
         
         if batch_idx is None:
             batch_idx = np.arange(self.n) 
         
         q_mu_batch = self.q_mu[batch_idx, ...]
         q_sigma_batch = self.q_sigma[batch_idx, ...]
-         
-        # Variational distribution over the hyper variable q(theta)
+
         q_theta = torch.distributions.MultivariateNormal(q_mu_batch, q_sigma_batch)
-        theta_kl = kl_gaussian_loss_term(q_theta, self.hyper_prior, self.n, self.data_dim)
-        self.update_added_loss_term('theta_kl', theta_kl)  # Update the KL term
+
+        self.hyper_prior.loc = self.hyper_prior.loc[:len(batch_idx), ...]
+        self.hyper_prior.scale = self.hyper_prior.covariance_matrix[:len(batch_idx), ...]
+        theta_kl = kl_gaussian_loss_term(q_theta, self.hyper_prior, len(batch_idx), 1)        
+        self.update_added_loss_term('theta_kl', theta_kl)
         return q_theta.rsample(sample_shape=torch.Size([num_samples]))
     
 class kl_gaussian_loss_term(AddedLossTerm):
@@ -142,7 +107,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         self.inducing_inputs = Z_init
         self.num_inducing = len(Z_init)
         self.n = len(train_y)
-        self.data_dim = train_x.shape[1]
+        self.input_dim = train_x.shape[1]
         # Sparse Variational Formulation
         q_u = CholeskyVariationalDistribution(self.num_inducing) 
         q_f = VariationalStrategy(self, self.inducing_inputs, q_u, learn_inducing_locations=True)
@@ -161,7 +126,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         hyper_prior_mean = torch.zeros(hyper_dim)
         log_hyper_prior = NormalPrior(hyper_prior_mean, torch.ones_like(hyper_prior_mean)*0.4) ## no correlation between hypers
 
-        self.log_theta = LogHyperVariationalDist(hyper_dim, log_hyper_prior, self.n, self.data_dim)
+        self.log_theta = VariationalHyperDist(hyper_dim, log_hyper_prior, self.n, self.input_dim)
         
     def forward(self, x, log_theta=1.0):
         mean_x = self.mean_module(x)
@@ -277,74 +242,74 @@ if __name__ == '__main__':
     
     model = model.double()
     
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     # Train
     losses = model.train_model(optimizer, train_loader, 
-                              minibatch_size=100, num_epochs=350,  combine_terms=True)
+                              minibatch_size=100, num_epochs=50,  combine_terms=True)
         
-    # Test 
-    test_x = torch.linspace(-8, 8, 1000).double()
-    test_y = func(test_x).double()
+    # # Test 
+    # test_x = torch.linspace(-8, 8, 1000).double()
+    # test_y = func(test_x).double()
     
-    ####
+    # ####
       
-    log_hyper_samples = model.sample_variational_log_hyper(num_samples=100)
+    # log_hyper_samples = model.sample_variational_log_hyper(num_samples=100)
     
-    # Get predictive distributions by feeding model through likelihood
+    # # Get predictive distributions by feeding model through likelihood
     
-    list_of_y_pred_dists = []
+    # list_of_y_pred_dists = []
     
-    model.eval()
-    model.likelihood.eval()
+    # model.eval()
+    # model.likelihood.eval()
     
-    for i in range(len(log_hyper_samples)):
+    # for i in range(len(log_hyper_samples)):
     
-        #theta = torch.nn.functional.softplus(log_hyper_samples[i])
+    #     #theta = torch.nn.functional.softplus(log_hyper_samples[i])
     
-        #self.update_covar_module_at_theta(theta)
+    #     #self.update_covar_module_at_theta(theta)
     
-        with torch.no_grad():
-            list_of_y_pred_dists.append(likelihood(model(test_x, log_theta=log_hyper_samples[i], prior=False)))
+    #     with torch.no_grad():
+    #         list_of_y_pred_dists.append(likelihood(model(test_x, log_theta=log_hyper_samples[i], prior=False)))
             
     
-    y_mix_loc = np.array([np.array(dist.loc) for dist in list_of_y_pred_dists])
-    y_mix_std = np.array([np.array(dist.covariance_matrix.diag()) for dist in list_of_y_pred_dists])
-    
-    plt.figure()
-    plt.plot(y_mix_std.T)
-    
-    plt.figure()
-    plt.plot(test_x, np.mean(y_mix_loc, axis=0),color='r')
-    plt.plot(test_x, test_y)
-    #plt.plot(test_x, np.array(y_mix_loc).T, alpha=0.4, color='b')
-    plt.plot(train_x, train_y, 'bo')
-    plt.scatter(model.variational_strategy.inducing_points.detach(), [-2.0]*model.num_inducing, c='g', marker='x', label='Inducing')
-
-    ###
-
-    prior_samples = model.log_theta.hyper_prior.sample_n(1000).numpy()
-    posterior_samples = model.sample_variational_log_hyper(1000).detach().numpy()
-    
-    plt.figure()
-    plt.hist(prior_samples[:,0], bins=40, alpha=0.5)
-    plt.hist(posterior_samples[:,0], bins=40, alpha=0.5)
-
+    # y_mix_loc = np.array([np.array(dist.loc) for dist in list_of_y_pred_dists])
+    # y_mix_std = np.array([np.array(dist.covariance_matrix.diag()) for dist in list_of_y_pred_dists])
     
     # plt.figure()
-    # plt.hist(prior_samples[:,0], bins=40)
-    # plt.hist(prior_samples[:,1], bins=40)
+    # plt.plot(y_mix_std.T)
+    
+    # plt.figure()
+    # plt.plot(test_x, np.mean(y_mix_loc, axis=0),color='r')
+    # plt.plot(test_x, test_y)
+    # #plt.plot(test_x, np.array(y_mix_loc).T, alpha=0.4, color='b')
+    # plt.plot(train_x, train_y, 'bo')
+    # plt.scatter(model.variational_strategy.inducing_points.detach(), [-2.0]*model.num_inducing, c='g', marker='x', label='Inducing')
 
-    # #y_star = model.mixture_posterior_predictive(test_x)
-    
-    # Visualise 
-    
-    #model.visualise_posterior(test_x, y_star)
-    # # Compute metrics
-    from utils.metrics import rmse, nlpd_mixture
+    # ###
 
-    rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)),test_y, torch.tensor([1.0]))
-    nll_test = nlpd_mixture(test_y, y_mix_loc, y_mix_std)
+    # prior_samples = model.log_theta.hyper_prior.sample_n(1000).numpy()
+    # posterior_samples = model.sample_variational_log_hyper(1000).detach().numpy()
     
-    print('Test RMSE: ' + str(rmse_test))
-    print('Test NLPD: ' + str(nll_test))
+    # plt.figure()
+    # plt.hist(prior_samples[:,0], bins=40, alpha=0.5)
+    # plt.hist(posterior_samples[:,0], bins=40, alpha=0.5)
+
+    
+    # # plt.figure()
+    # # plt.hist(prior_samples[:,0], bins=40)
+    # # plt.hist(prior_samples[:,1], bins=40)
+
+    # # #y_star = model.mixture_posterior_predictive(test_x)
+    
+    # # Visualise 
+    
+    # #model.visualise_posterior(test_x, y_star)
+    # # # Compute metrics
+    # from utils.metrics import rmse, nlpd_mixture
+
+    # rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)),test_y, torch.tensor([1.0]))
+    # nll_test = nlpd_mixture(test_y, y_mix_loc, y_mix_std)
+    
+    # print('Test RMSE: ' + str(rmse_test))
+    # print('Test NLPD: ' + str(nll_test))
     
