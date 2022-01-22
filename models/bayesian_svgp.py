@@ -17,14 +17,17 @@ from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import VariationalStrategy
 from gpytorch.kernels import ScaleKernel, RBFKernel
 from gpytorch.means import ZeroMean
-from gpytorch.priors import NormalPrior
+from gpytorch.priors import MultivariateNormalPrior
 from torch.utils.data import TensorDataset, DataLoader
 from gpytorch.mlls.added_loss_term import AddedLossTerm
+
+torch.manual_seed(42)
+np.random.seed(37)
 
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
 
-class VariationalHyperDist(torch.nn.Module):
+class VariationalHyperDist(gpytorch.Module):
     
     def __init__(self, hyper_dim, hyper_prior, n, input_dim):
         super().__init__()
@@ -34,16 +37,16 @@ class VariationalHyperDist(torch.nn.Module):
         self.n = n
         self.input_dim = input_dim
         
-        num_elements_cholesky = hyper_dim*(hyper_dim + 1)/2
+        num_elements_cholesky = int(hyper_dim*(hyper_dim + 1)/2)
 
         # Global variational params
         self.q_mu = torch.nn.Parameter(torch.randn(hyper_dim))
         self.q_sigma_vec = torch.nn.Parameter(torch.randn(num_elements_cholesky))
         
-        self.jitter = torch.eye(hyper_dim).unsqueeze(0)*1e-5
+        self.jitter = torch.eye(hyper_dim)*1e-5
 
-        # This will add the KL divergence KL(q(theta) || p(theta)) to the loss
-        self.register_added_loss_term("theta_kl")
+        # This will add the KL divergence KL(q(log_theta) || p(log_theta)) to the loss
+        self.register_added_loss_term("log_theta_kl")
         
     def construct_sigma(self):
        
@@ -57,41 +60,28 @@ class VariationalHyperDist(torch.nn.Module):
        sigma += self.jitter
        return sigma  
 
-    def forward(self, num_samples, batch_idx=None):
+    def forward(self, num_samples):
         
         self.q_sigma = self.construct_sigma()
         
-        if batch_idx is None:
-            batch_idx = np.arange(self.n) 
+        q_log_theta = torch.distributions.MultivariateNormal(self.q_mu, self.q_sigma)
         
-        q_mu_batch = self.q_mu[batch_idx, ...]
-        q_sigma_batch = self.q_sigma[batch_idx, ...]
-
-        q_theta = torch.distributions.MultivariateNormal(q_mu_batch, q_sigma_batch)
-
-        self.hyper_prior.loc = self.hyper_prior.loc[:len(batch_idx), ...]
-        self.hyper_prior.scale = self.hyper_prior.covariance_matrix[:len(batch_idx), ...]
-        theta_kl = kl_gaussian_loss_term(q_theta, self.hyper_prior, len(batch_idx), 1)        
-        self.update_added_loss_term('theta_kl', theta_kl)
-        return q_theta.rsample(sample_shape=torch.Size([num_samples]))
+        log_theta_kl = kl_gaussian_loss_term(q_log_theta, self.hyper_prior, self.n, 1)        
+        self.update_added_loss_term('log_theta_kl', log_theta_kl)
+        return q_log_theta.rsample(sample_shape=torch.Size([num_samples]))
     
 class kl_gaussian_loss_term(AddedLossTerm):
     
-    def __init__(self, q_theta, hyper_prior, n, data_dim):
-        self.q_theta = q_theta
-        self.p_theta = hyper_prior
+    def __init__(self, q_log_theta, log_hyper_prior, n, input_dim):
+        self.q_log_theta = q_log_theta
+        self.p_log_theta = log_hyper_prior
         self.n = n
-        self.data_dim = data_dim
+        self.input_dim = input_dim
         
     def loss(self): 
-        kl_per_latent_dim = kl_divergence(self.q_theta, self.p_theta).sum(axis=0) # vector of size latent_dim
-        kl_per_point = kl_per_latent_dim.sum()/self.n # scalar
-        # inside the forward method of variational ELBO, 
-        # the added loss terms are expanded (using add_) to take the same 
-        # shape as the log_lik term (has shape data_dim)
-        # so they can be added together. Hence, we divide by data_dim to avoid 
-        # overcounting the kl term
-        return (kl_per_point/self.data_dim)
+        kl_per_hyper_dim = kl_divergence(self.q_log_theta, self.p_log_theta).sum(axis=0) # vector of size hyper_dim
+        kl_per_point = kl_per_hyper_dim.sum()/self.n # scalar
+        return kl_per_point
 
 
 class BayesianStochasticVariationalGP(ApproximateGP):
@@ -122,23 +112,24 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         
         # Hyperparameter variational distribution
         
-        hyper_dim = self.data_dim + 2 # lengthscale per dim, sig var and noise var
+        hyper_dim = self.input_dim + 2 # lengthscale per dim, sig var and noise var
         hyper_prior_mean = torch.zeros(hyper_dim)
-        log_hyper_prior = NormalPrior(hyper_prior_mean, torch.ones_like(hyper_prior_mean)*0.4) ## no correlation between hypers
+        log_hyper_prior = MultivariateNormalPrior(hyper_prior_mean, torch.eye(hyper_dim)*0.01) ## no correlation between hypers
 
         self.log_theta = VariationalHyperDist(hyper_dim, log_hyper_prior, self.n, self.input_dim)
         
-    def forward(self, x, log_theta=1.0):
+    def forward(self, x, log_theta=None):
         mean_x = self.mean_module(x)
-        theta = torch.exp(log_theta)
-        self.update_covar_module_at_theta(theta)
+        if log_theta is not None:
+            theta = torch.exp(log_theta)
+            self.update_covar_module_at_theta(theta)
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
     
     def update_covar_module_at_theta(self, theta):
         self.covar_module.outputscale = theta[0]
-        self.covar_module.base_kernel.lengthscale = theta[1:self.data_dim+1]
-        self.likelihood.noise_covar.noise = theta[-1]
+        self.covar_module.base_kernel.lengthscale = theta[1:-1]
+        self.likelihood.noise_covar.noise = theta[-1]**2
         return self.covar_module
     
     def sample_variational_log_hyper(self, num_samples):
@@ -167,17 +158,16 @@ class BayesianStochasticVariationalGP(ApproximateGP):
                     output = self(x_batch, log_theta=log_hyper_sample.flatten())
                     loss = -elbo(output, y_batch).sum()
                     
-                    if i%100 == 0:
-                        minibatch_iter.set_description(f"Epoch {i}")
-                        minibatch_iter.set_postfix(loss=loss.item())
-                        
-                        #print(self.log_theta.q_mu.detach())
-                        #print('hyper_sample :' + str(log_hyper_sample))
-                        #print(self.covar_module.base_kernel.lengthscale)    
+                    #print(self.log_theta.q_mu.detach())
+                    print('hyper_sample :' + str(np.exp(log_hyper_sample.detach().numpy())))
+                    #print(self.covar_module.base_kernel.lengthscale)    
                         
                     losses.append(loss.item())
                     loss.backward()
                     optimizer.step()
+                    
+                minibatch_iter.set_description(f"Epoch {i}")
+                minibatch_iter.set_postfix(loss=loss.item())
                     
         return losses
 
@@ -213,7 +203,7 @@ if __name__ == '__main__':
     N = 1000  # Number of training observations
 
     X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+    Y = func(X) + 0.9 * torch.randn(N)  # Noisy Y values
     
     #train_index = np.where((X < -2) | (X > 2))
 
@@ -221,11 +211,11 @@ if __name__ == '__main__':
     #train_y = Y[train_index]
 
     train_n = int(floor(0.8 * len(X)))
-    train_x = X[:train_n][:,None].double()
-    train_y = Y[:train_n].contiguous().double()
+    train_x = X[:train_n][:,None]
+    train_y = Y[:train_n].contiguous()
     
-    test_x = X[train_n:][:,None].double()
-    test_y = Y[train_n:].contiguous().double()
+    test_x = X[train_n:][:,None]
+    test_y = Y[train_n:].contiguous()
         
     train_dataset = TensorDataset(train_x, train_y)
     train_loader = DataLoader(train_dataset, batch_size=200, shuffle=True)
@@ -235,69 +225,83 @@ if __name__ == '__main__':
     
     # Initial inducing points
     index_inducing = np.random.randint(0,len(train_x), 25)
-    Z_init = train_x[index_inducing].double()
+    Z_init = train_x[index_inducing]
         
-    likelihood = gpytorch.likelihoods.GaussianLikelihood().double()
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
     model = BayesianStochasticVariationalGP(train_x, train_y, likelihood, Z_init)
     
-    model = model.double()
+    model = model
     
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     # Train
     losses = model.train_model(optimizer, train_loader, 
-                              minibatch_size=100, num_epochs=50,  combine_terms=True)
+                              minibatch_size=100, num_epochs=200,  combine_terms=True)
         
-    # # Test 
-    # test_x = torch.linspace(-8, 8, 1000).double()
-    # test_y = func(test_x).double()
+    # Test 
+    test_x = torch.linspace(-8, 8, 1000)
+    test_y = func(test_x)
     
     # ####
       
-    # log_hyper_samples = model.sample_variational_log_hyper(num_samples=100)
+    log_hyper_samples = model.sample_variational_log_hyper(num_samples=50)
     
-    # # Get predictive distributions by feeding model through likelihood
+    # Get predictive distributions by feeding model through likelihood
     
-    # list_of_y_pred_dists = []
+    list_of_y_pred_dists = []
     
-    # model.eval()
-    # model.likelihood.eval()
+    model.eval()
+    model.likelihood.eval()
     
-    # for i in range(len(log_hyper_samples)):
+    for i in range(len(log_hyper_samples)):
     
-    #     #theta = torch.nn.functional.softplus(log_hyper_samples[i])
+        #theta = torch.nn.functional.softplus(log_hyper_samples[i])
     
-    #     #self.update_covar_module_at_theta(theta)
+        #self.update_covar_module_at_theta(theta)
     
-    #     with torch.no_grad():
-    #         list_of_y_pred_dists.append(likelihood(model(test_x, log_theta=log_hyper_samples[i], prior=False)))
+        with torch.no_grad():
+            list_of_y_pred_dists.append(likelihood(model(test_x, log_theta=log_hyper_samples[i], prior=False)))
             
     
-    # y_mix_loc = np.array([np.array(dist.loc) for dist in list_of_y_pred_dists])
-    # y_mix_std = np.array([np.array(dist.covariance_matrix.diag()) for dist in list_of_y_pred_dists])
+    y_mix_loc = np.array([np.array(dist.loc) for dist in list_of_y_pred_dists])
+    y_mix_std = np.array([np.array(dist.covariance_matrix.diag()) for dist in list_of_y_pred_dists])
     
-    # plt.figure()
-    # plt.plot(y_mix_std.T)
+    #plt.figure()
+    #plt.plot(y_mix_std.T)
     
-    # plt.figure()
-    # plt.plot(test_x, np.mean(y_mix_loc, axis=0),color='r')
-    # plt.plot(test_x, test_y)
-    # #plt.plot(test_x, np.array(y_mix_loc).T, alpha=0.4, color='b')
-    # plt.plot(train_x, train_y, 'bo')
-    # plt.scatter(model.variational_strategy.inducing_points.detach(), [-2.0]*model.num_inducing, c='g', marker='x', label='Inducing')
+    plt.figure()
+    plt.plot(test_x, np.mean(y_mix_loc, axis=0),color='r')
+    plt.plot(test_x, test_y)
+    #plt.plot(test_x, np.array(y_mix_loc).T, alpha=0.4, color='b')
+    plt.plot(train_x, train_y, 'bo')
+    plt.scatter(model.variational_strategy.inducing_points.detach(), [-2.0]*model.num_inducing, c='g', marker='x', label='Inducing')
 
     # ###
 
-    # prior_samples = model.log_theta.hyper_prior.sample_n(1000).numpy()
-    # posterior_samples = model.sample_variational_log_hyper(1000).detach().numpy()
+    prior_samples = model.log_theta.hyper_prior.sample_n(50).numpy()
     
-    # plt.figure()
-    # plt.hist(prior_samples[:,0], bins=40, alpha=0.5)
-    # plt.hist(posterior_samples[:,0], bins=40, alpha=0.5)
+    plt.figure()
+    plt.hist(np.exp(prior_samples[:,0]), bins=40, alpha=0.5)
+    plt.hist(np.exp(log_hyper_samples[:,0].detach().numpy()), bins=40, alpha=0.5)
 
     
     # # plt.figure()
     # # plt.hist(prior_samples[:,0], bins=40)
     # # plt.hist(prior_samples[:,1], bins=40)
+    
+    ### draw samples form the prior
+    
+    # mean_module = ZeroMean()
+    # rbf_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=train_x.shape[-1]))
+    
+    # rbf_module.outputscale = model.covar_module.outputscale
+    # rbf_module.base_kernel.lengthscale = model.covar_module.base_kernel.lengthscale
+    
+    # kernel_matrix = rbf_module(test_x)
+    
+    # f = gpytorch.distributions.MultivariateNormal(mean_module(test_x), kernel_matrix).sample(torch.Size([100]))
+    
+    # plt.figure()
+    # plt.plot(test_x, f.T)
 
     # # #y_star = model.mixture_posterior_predictive(test_x)
     

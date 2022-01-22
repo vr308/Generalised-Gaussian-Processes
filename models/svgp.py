@@ -146,7 +146,7 @@ if __name__ == '__main__':
     N = 1000  # Number of training observations
 
     X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+    Y = func(X) + 0.9 * torch.randn(N)  # Noisy Y values
     
     #train_index = np.where((X < -2) | (X > 2))
 
@@ -203,7 +203,21 @@ if __name__ == '__main__':
     
     print('Test RMSE: ' + str(rmse_test))
     print('Test NLPD: ' + str(nll_test))
-   
+    
+    ### draw samples form the prior
+    
+    # mean_module = ZeroMean()
+    # rbf_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=train_x.shape[-1]))
+    
+    # rbf_module.outputscale = model.covar_module.outputscale
+    # rbf_module.base_kernel.lengthscale = model.covar_module.base_kernel.lengthscale
+    
+    # kernel_matrix = rbf_module(test_x)
+    
+    # f = gpytorch.distributions.MultivariateNormal(mean_module(test_x), kernel_matrix).sample(torch.Size([100]))
+    
+    # plt.figure()
+    # plt.plot(test_x, f.T)
     
     
     
