@@ -30,15 +30,12 @@ from utils.metrics import rmse, nlpd
 from utils.experiment_tools import get_dataset_class, experiment_name
 import matplotlib.pyplot as plt
 
-gpytorch.settings.cholesky_jitter(float=1e-3)
+gpytorch.settings.cholesky_jitter(float=1e-4)
 plt.style.use('seaborn-muted')
 
 #### Global variables 
 
-## Naval and Kin8mn need n_jobs = 1
-
-DATASETS = ["Boston", "Concrete", "Energy", "Power", "Kin8mn" ,"Naval", "Yacht", "WineRed"]
-DATASETS = ["Naval"]
+DATASETS = ["Boston", "Concrete", "Energy", "Yacht", "WineRed"]
 
 MODEL_NAMES = ['SGPR', 'Bayesian_SGPR_HMC', 'SVGP', 'Bayesian_SVGP']
 MODEL_CLASS = [
@@ -47,8 +44,7 @@ MODEL_CLASS = [
             StochasticVariationalGP,
             BayesianStochasticVariationalGP
             ]
-#SPLIT_INDICES = [*range(10)]
-SPLIT_INDICES =[7,8,9]
+SPLIT_INDICES = [*range(10)]
 
 model_dictionary = dict(zip(MODEL_NAMES, MODEL_CLASS))
 
@@ -72,7 +68,7 @@ def single_run(
         ###### Loading a data split ########
         
         dataset = get_dataset_class(dataset_name)(split=split_index, prop=train_test_split)
-        X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
+        X_train, Y_train, X_test, Y_test = dataset.X_train, dataset.Y_train, dataset.X_test, dataset.Y_test
         
         ###### Initialising model class, likelihood, inducing inputs ##########
         
@@ -95,12 +91,12 @@ def single_run(
         elif model_name in ('SVGP', 'Bayesian_SVGP'):
             
             train_dataset = TensorDataset(X_train, Y_train)
-            train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
             #test_dataset = TensorDataset(X_test, Y_test)
             #test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
             
-            losses = model.train_model(optimizer, train_loader, minibatch_size=100, num_epochs=num_epochs, combine_terms=True)
+            losses = model.train_model(optimizer, train_loader, minibatch_size=batch_size, num_epochs=num_epochs, combine_terms=True)
         
         ### Predictions
         
@@ -186,12 +182,12 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default='SGPR')
-    parser.add_argument("--num_inducing", type=int, default=200)
+    parser.add_argument("--model_name", type=str, default='SVGP')
+    parser.add_argument("--num_inducing", type=int, default=100)
     parser.add_argument("--seed", type=int, default=51)
     parser.add_argument("--max_iters", type=int, default=2000)
-    parser.add_argument("--num_epochs", type=int, default=400)
-    parser.add_argument("--batch_size", type=int, default=100)
+    parser.add_argument("--num_epochs", type=int, default=2000)
+    parser.add_argument("--batch_size", type=int, default=200)
     parser.add_argument("--test_train_split", type=float, default=0.8)
     parser.add_argument("--n_jobs", type=int, default=1)
     

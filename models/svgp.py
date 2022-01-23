@@ -141,68 +141,68 @@ class StochasticVariationalGP(ApproximateGP):
         return y_star
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     
-    N = 1000  # Number of training observations
+#     N = 1000  # Number of training observations
 
-    X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.9 * torch.randn(N)  # Noisy Y values
+#     X = torch.randn(N) * 2 - 1  # X values
+#     Y = func(X) + 0.9 * torch.randn(N)  # Noisy Y values
     
-    #train_index = np.where((X < -2) | (X > 2))
+#     #train_index = np.where((X < -2) | (X > 2))
 
-    #train_x = X[train_index][:,None]
-    #train_y = Y[train_index]
+#     #train_x = X[train_index][:,None]
+#     #train_y = Y[train_index]
     
-    train_n = int(floor(0.8 * len(X)))
-    train_x = X[:train_n][:,None]
-    train_y = Y[:train_n].contiguous()
+#     train_n = int(floor(0.8 * len(X)))
+#     train_x = X[:train_n][:,None]
+#     train_y = Y[:train_n].contiguous()
     
-    test_x = X[train_n:][:,None]
-    test_y = Y[train_n:].contiguous()
+#     test_x = X[train_n:][:,None]
+#     test_y = Y[train_n:].contiguous()
         
-    train_dataset = TensorDataset(train_x, train_y)
-    train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+#     train_dataset = TensorDataset(train_x, train_y)
+#     train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
     
-    test_dataset = TensorDataset(test_x, test_y)
-    test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
+#     test_dataset = TensorDataset(test_x, test_y)
+#     test_loader = DataLoader(test_dataset, batch_size=100, shuffle=False)
     
-    # Initial inducing points
-    index_inducing = np.random.randint(0,len(train_x), 12)
-    Z_init = train_x[index_inducing]
+#     # Initial inducing points
+#     index_inducing = np.random.randint(0,len(train_x), 12)
+#     Z_init = train_x[index_inducing]
     
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+#     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     
-    model = StochasticVariationalGP(train_x, train_y, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+#     model = StochasticVariationalGP(train_x, train_y, likelihood, Z_init)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-    # Train
-    losses = model.train_model(optimizer, train_loader, 
-                              minibatch_size=100, num_epochs=200,  combine_terms=True)
+#     # Train
+#     losses = model.train_model(optimizer, train_loader, 
+#                               minibatch_size=100, num_epochs=200,  combine_terms=True)
     
-    ####
-    # Test 
-    test_x = torch.linspace(-8, 8, 1000)
-    test_y = func(test_x)
+#     ####
+#     # Test 
+#     test_x = torch.linspace(-8, 8, 1000)
+#     test_y = func(test_x)
     
-    #Y_train_pred = model.posterior_predictive(train_x)
-    test_pred = model.posterior_predictive(test_x)
+#     #Y_train_pred = model.posterior_predictive(train_x)
+#     test_pred = model.posterior_predictive(test_x)
     
-    import matplotlib.pylab as plt
+#     import matplotlib.pylab as plt
     
-    plt.figure()
-    plt.plot(test_x, test_y)
-    plt.plot(train_x, train_y, 'bo')
-    plt.plot(test_x, test_pred.loc)
-    #plt.scatter(model.inducing_inputs.detach(), [-2.0]*model.num_inducing, c='r', marker='x', label='Inducing')
-    plt.scatter(model.variational_strategy.inducing_points.detach(), [-2.0]*model.num_inducing, c='g', marker='x', label='Inducing')
+#     plt.figure()
+#     plt.plot(test_x, test_y)
+#     plt.plot(train_x, train_y, 'bo')
+#     plt.plot(test_x, test_pred.loc)
+#     #plt.scatter(model.inducing_inputs.detach(), [-2.0]*model.num_inducing, c='r', marker='x', label='Inducing')
+#     plt.scatter(model.variational_strategy.inducing_points.detach(), [-2.0]*model.num_inducing, c='g', marker='x', label='Inducing')
 
-    # # Compute metrics
+#     # # Compute metrics
     
-    rmse_test = rmse(test_pred.loc, test_y, torch.tensor([1.0]))
-    nll_test = nlpd(test_pred, test_y, torch.tensor([1.0]))
+#     rmse_test = rmse(test_pred.loc, test_y, torch.tensor([1.0]))
+#     nll_test = nlpd(test_pred, test_y, torch.tensor([1.0]))
     
-    print('Test RMSE: ' + str(rmse_test))
-    print('Test NLPD: ' + str(nll_test))
+#     print('Test RMSE: ' + str(rmse_test))
+#     print('Test NLPD: ' + str(nll_test))
     
     ### draw samples form the prior
     

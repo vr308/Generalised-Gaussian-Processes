@@ -222,7 +222,7 @@ if __name__ == "__main__":
     
     ####### Custom training depending on model class #########
     
-    losses = model.train_model(optimizer, max_steps=10000)
+    losses = model.train_model(optimizer, max_steps=4000)
     
     #Y_train_pred = model.posterior_predictive(X_train)
     Y_test_pred = model.posterior_predictive(X_test)

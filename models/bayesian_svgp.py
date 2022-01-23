@@ -114,7 +114,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         
         hyper_dim = self.input_dim + 2 # lengthscale per dim, sig var and noise var
         hyper_prior_mean = torch.zeros(hyper_dim)
-        log_hyper_prior = MultivariateNormalPrior(hyper_prior_mean, torch.eye(hyper_dim)*1) ## no correlation between hypers
+        log_hyper_prior = MultivariateNormalPrior(hyper_prior_mean, torch.eye(hyper_dim)*0.01) ## no correlation between hypers
 
         self.log_theta = VariationalHyperDist(hyper_dim, log_hyper_prior, self.n, self.input_dim)
         
