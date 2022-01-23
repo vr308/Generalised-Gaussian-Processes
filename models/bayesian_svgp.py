@@ -40,8 +40,8 @@ class VariationalHyperDist(gpytorch.Module):
         num_elements_cholesky = int(hyper_dim*(hyper_dim + 1)/2)
 
         # Global variational params
-        self.q_mu = torch.nn.Parameter(torch.randn(hyper_dim))
-        self.q_sigma_vec = torch.nn.Parameter(torch.randn(num_elements_cholesky))
+        self.q_mu = torch.nn.Parameter(torch.randn(hyper_dim)*1e-3)
+        self.q_sigma_vec = torch.nn.Parameter(torch.randn(num_elements_cholesky)*1e-3)
         
         self.jitter = torch.eye(hyper_dim)*1e-5
 
@@ -114,7 +114,7 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         
         hyper_dim = self.input_dim + 2 # lengthscale per dim, sig var and noise var
         hyper_prior_mean = torch.zeros(hyper_dim)
-        log_hyper_prior = MultivariateNormalPrior(hyper_prior_mean, torch.eye(hyper_dim)*0.01) ## no correlation between hypers
+        log_hyper_prior = MultivariateNormalPrior(hyper_prior_mean, torch.eye(hyper_dim)*1) ## no correlation between hypers
 
         self.log_theta = VariationalHyperDist(hyper_dim, log_hyper_prior, self.n, self.input_dim)
         
@@ -147,29 +147,38 @@ class BayesianStochasticVariationalGP(ApproximateGP):
         self.likelihood.train()
         elbo = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=len(self.train_y))
         
-        losses = []
+        epoch_losses = []
         #iterator = trange(1000, leave=True)
         for i in range(num_epochs):
             with tqdm(train_loader, unit="batch", leave=True) as minibatch_iter:
+                batch_losses = []
                 for x_batch, y_batch in minibatch_iter:
 
                     optimizer.zero_grad()
-                    log_hyper_sample = self.sample_variational_log_hyper(num_samples=1)
-                    output = self(x_batch, log_theta=log_hyper_sample.flatten())
-                    loss = -elbo(output, y_batch).sum()
                     
-                    #print(self.log_theta.q_mu.detach())
-                    print('hyper_sample :' + str(np.exp(log_hyper_sample.detach().numpy())))
-                    #print(self.covar_module.base_kernel.lengthscale)    
+                    loss = 0.0
+                    for _ in range(5):
                         
-                    losses.append(loss.item())
+                        log_hyper_sample = self.sample_variational_log_hyper(num_samples=1)
+    
+                        #while np.exp(log_hyper_sample[0][0].detach().numpy()) > 2:
+    
+                        output = self(x_batch, log_theta=log_hyper_sample.flatten())
+                        loss += -elbo(output, y_batch).sum()/5
+                        
+                        #print(self.log_theta.q_mu.detach())
+                        #print('hyper_sample :' + str(np.exp(log_hyper_sample.detach().numpy())))
+                        #print(self.covar_module.base_kernel.lengthscale)    
+                        
+                    batch_losses.append(loss.item())
                     loss.backward()
                     optimizer.step()
                     
-                minibatch_iter.set_description(f"Epoch {i}")
-                minibatch_iter.set_postfix(loss=loss.item())
+                minibatch_iter.set_description(f"Epoch {i} {loss.item()}")
+                #minibatch_iter.set_postfix(loss=loss.item())
+            epoch_losses.append(np.sum(batch_losses))
                     
-        return losses
+        return epoch_losses, batch_losses
 
     def mixture_posterior_predictive(self, test_x):
         
@@ -203,7 +212,7 @@ if __name__ == '__main__':
     N = 1000  # Number of training observations
 
     X = torch.randn(N) * 2 - 1  # X values
-    Y = func(X) + 0.9 * torch.randn(N)  # Noisy Y values
+    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
     
     #train_index = np.where((X < -2) | (X > 2))
 
@@ -230,12 +239,11 @@ if __name__ == '__main__':
     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     model = BayesianStochasticVariationalGP(train_x, train_y, likelihood, Z_init)
     
-    model = model
-    
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     # Train
+    
     losses = model.train_model(optimizer, train_loader, 
-                              minibatch_size=100, num_epochs=200,  combine_terms=True)
+                              minibatch_size=100, num_epochs=1000,  combine_terms=True)
         
     # Test 
     test_x = torch.linspace(-8, 8, 1000)
@@ -243,7 +251,7 @@ if __name__ == '__main__':
     
     # ####
       
-    log_hyper_samples = model.sample_variational_log_hyper(num_samples=50)
+    log_hyper_samples = model.sample_variational_log_hyper(num_samples=200)
     
     # Get predictive distributions by feeding model through likelihood
     
@@ -277,11 +285,11 @@ if __name__ == '__main__':
 
     # ###
 
-    prior_samples = model.log_theta.hyper_prior.sample_n(50).numpy()
+    prior_samples = model.log_theta.hyper_prior.sample_n(200).numpy()
     
     plt.figure()
-    plt.hist(np.exp(prior_samples[:,0]), bins=40, alpha=0.5)
-    plt.hist(np.exp(log_hyper_samples[:,0].detach().numpy()), bins=40, alpha=0.5)
+    plt.hist(prior_samples[:,0], bins=40, alpha=0.5)
+    plt.hist(log_hyper_samples[:,0].detach().numpy(), bins=40, alpha=0.5)
 
     
     # # plt.figure()
