@@ -41,8 +41,6 @@ def rmse(Y_pred_mean, Y_test, Y_std):
   
 def nlpd(Y_test_pred, Y_test, Y_std):
     
-      #Y_test_pred.covariance_matrix += 1e-2*torch.eye(len(Y_test))
-      #new_dist = gpytorch.distributions.MultivariateNormal(mean=Y_test_pred.loc, covariance_matrix=Y_test_pred.covariance_matrix + 1e-2*torch.eye(len(Y_test)))
       lpd = Y_test_pred.log_prob(Y_test)
       # return the average
       avg_lpd_rescaled = lpd.detach()/len(Y_test) - torch.log(torch.Tensor(Y_std))

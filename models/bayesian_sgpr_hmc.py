@@ -72,7 +72,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
             # Z_opt is the intermediate inducing points from the optimisation stage
             y_ = gp.marginal_likelihood("y", X=self.train_x.numpy(), Xu=Z_opt, y=self.train_y.numpy(), noise=sig_n)
         
-            trace = pm.sample(n_samples, tune=100, chains=1)   
+            trace = pm.sample(n_samples, tune=100, chains=1, return_inferencedata=False)   
             
        return trace
    
@@ -99,9 +99,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
           self.freeze_kernel_hyperparameters()
 
           if n_iter < break_for_hmc[0]: ## the iterations before sampling (no sampling has occured, just optimise as normal)
-              
-              print('---------------First Optimisation loop (only optimize Z)------------------------------')
-             
+                           
               output = self(self.train_x)
               loss = -elbo(output, self.train_y)
               
@@ -118,7 +116,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                       self.update_model_to_hyper(elbo, hyper_sample)
                       output = self(self.train_x)
                       loss += -elbo(output, self.train_y).sum()/len(trace_hyper)
-                  print('Iter %d/%d - Loss: %.3f ' % (n_iter, max_steps, loss.item()) + '\n'),
+                  print('Iter %d/%d - Loss: %.3f ' % (n_iter, max_steps, loss.item())),
                   losses.append(loss.item())
                   loss.backward()
                   optimizer.step()
@@ -162,15 +160,7 @@ def mixture_posterior_predictive(model, test_x, trace_hyper):
       for i in range(len(trace_hyper)):
           
          hyper_sample = trace_hyper[i]
-         #model.update_model_to_hyper(model, trace_hyper[i])
-         model.likelihood.noise_covar.noise = hyper_sample['sig_n']**2
-         model.base_covar_module.outputscale = hyper_sample['sig_f']**2
-         model.base_covar_module.base_kernel.lengthscale = hyper_sample['ls']
-         
-         model.likelihood.noise_covar.noise=model.likelihood.noise_covar.noise.double()
-         model.base_covar_module.outputscale=model.base_covar_module.outputscale.double() 
-         model.base_covar_module.base_kernel.lengthscale=model.base_covar_module.base_kernel.lengthscale.double()
-         
+         model.update_model_to_hyper(model, hyper_sample)
          with torch.no_grad():
               pred = model.likelihood(model(test_x))
               try:
