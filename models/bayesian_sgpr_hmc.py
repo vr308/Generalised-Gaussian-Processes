@@ -18,7 +18,7 @@ import scipy.stats as st
 import pymc3 as pm
 
 torch.manual_seed(45)
-np.random.seed(37)
+np.random.seed(45)
 
 def func(x):
     return np.sin(x * 3) + 0.3 * np.cos(x * 4 * 3.14) 
@@ -93,13 +93,14 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         losses = []
         trace_hyper = None
         trace_step_size = []
+        trace_perf_time= []
         logged = False
         
         for n_iter in range(max_steps):
             
           optimizer.zero_grad()
           
-          if n_iter < break_for_hmc[0]: ##  warmstart phase (no sampling has occured, just optimise as normal)
+          if n_iter < hmc_scheduler[0]: ##  warmstart phase (no sampling has occured, just optimise as normal)
           
               if not logged:
                   print('----------------Warm Start Phase--------------------')
@@ -127,26 +128,27 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                   losses.append(loss.item())
                   loss.backward()
                   optimizer.step()
-              
               if n_iter in hmc_scheduler: ## alternate to hmc sampling of hypers
-                        print('---------------HMC step start------------------------------')
-                        print('Iter %d/%d - Loss: %.3f ' % (n_iter, max_steps, loss.item()) + '\n'),
-                        Z_opt = self.inducing_points.numpy()#[:,None]
+              
+                    print('---------------HMC step start------------------------------')
+                    print('Iter %d/%d - Loss: %.3f ' % (n_iter, max_steps, loss.item()) + '\n'),
+                    Z_opt = self.inducing_points.numpy()#[:,None]
+                    
+                    if n_iter in (hmc_scheduler[0], hmc_scheduler[-1]):
+                        num_tune = 500
+                        num_samples = 100
+                        sampler_params=None
+                    else:
+                        num_tune = 25
+                        num_samples = 10
+                        prev_step_size = trace_hyper.get_sampler_stats('step_size')[0]
+                        sampler_params = {'step_scale': prev_step_size}
                         
-                        if n_iter in (hmc_scheduler[0], hmc_scheduler[-1]):
-                            num_tune = 500
-                            num_samples = 100
-                            sampler_params=None
-                        else:
-                            num_tune = 25
-                            num_samples = 10
-                            prev_step_size = trace_hyper.get_sampler_stats('step_size')[0]
-                            sampler_params = {'step_scale': prev_step_size}
-                            
-                        trace_hyper = self.sample_optimal_variational_hyper_dist(num_samples, self.data_dim, Z_opt, num_tune, sampler_params)  
-                        print('---------------HMC step finish------------------------------')
-                        trace_step_size.append(trace_hyper.get_sampler_stats('step_size')[0])
-        return losses, trace_hyper, trace_step_size
+                    trace_hyper = self.sample_optimal_variational_hyper_dist(num_samples, self.data_dim, Z_opt, num_tune, sampler_params)  
+                    print('---------------HMC step finish------------------------------')
+                    trace_step_size.append(trace_hyper.get_sampler_stats('step_size')[0])
+                    trace_perf_time.append(trace_hyper.get_sampler_stats('perf_counter_diff').sum())       
+        return losses, trace_hyper, trace_step_size, trace_perf_time
                
    def optimal_q_u(self):
        return self(self.covar_module.inducing_points)
@@ -198,30 +200,30 @@ def mixture_posterior_predictive(model, test_x, trace_hyper):
      
       return list_of_y_pred_dists
        
-if __name__ == '__main__':
+# if __name__ == '__main__':
     
-    from utils.experiment_tools import get_dataset_class
-    from utils.metrics import rmse, nlpd_mixture, nlpd
+#     from utils.experiment_tools import get_dataset_class
+#     from utils.metrics import rmse, nlpd_mixture, nlpd
 
-    dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
-    X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
+#     dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
+#     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
-    ###### Initialising model class, likelihood, inducing inputs ##########
+#     ###### Initialising model class, likelihood, inducing inputs ##########
     
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+#     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     
-    ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
-    #Z_init = torch.randn(num_inducing, input_dim)
-    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
+#     ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
+#     #Z_init = torch.randn(num_inducing, input_dim)
+#     Z_init = X_train[np.random.randint(0,len(X_train), 100)]
 
-    model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+#     model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
-    ####### Custom training depending on model class #########
+#     ####### Custom training depending on model class #########
     
-    max_steps = 2000
-    break_for_hmc = np.concatenate((np.arange(100,1500,50), np.array([max_steps-1])))
-    losses, trace_hyper, step_sizes = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
+#     max_steps = 500
+#     break_for_hmc = np.concatenate((np.arange(100,500,50), np.array([max_steps-1])))
+#     losses, trace_hyper, step_sizes, perf_time = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
     
     # loss_greedy_protocol = losses
     
@@ -263,15 +265,15 @@ if __name__ == '__main__':
     
     # ############ Mixture stuff
     
-    Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
-    y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
-    ### Compute Metrics  ###########
+    # Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
+    # y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
+    # ### Compute Metrics  ###########
     
-    rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
-    nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
+    # rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
+    # nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
 
-    print('Test RMSE: ' + str(rmse_test))
-    print('Test NLPD: ' + str(nlpd_test))
+    # print('Test RMSE: ' + str(rmse_test))
+    # print('Test NLPD: ' + str(nlpd_test))
     
     ################################################
 

@@ -28,7 +28,8 @@ def experiment_name(
     num_inducing,
     max_iter,
     num_epochs,
-    batch_size
+    batch_size, 
+    step_sizes
 ):
     if model_name in ('SGPR', 'Bayesian_SGPR_HMC'):
         return (

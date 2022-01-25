@@ -7,6 +7,11 @@ in a tabular format - mainly aggregating over splits (there is a .json for each 
 
 """
 
+## Jan 23 has SVGP 
+## Dec 30/31 as SGPR
+## Jan 25 has BSGPR HMC
+## Jan 25 has GPR+HMC
+
 import sys
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
@@ -34,7 +39,7 @@ def parse_command_line_args() -> Namespace:
         nargs="*",
         help="Name of the log directories containing experimental results, format is e.g. Feb_12."
              "Specify more than one in case the experiment run overnight.",
-        default=['Jan_23']#["Jan_01", "Jan_02", "Jan_03"]
+        default=['Jan_25']#["Jan_01", "Jan_02", "Jan_03"]
     )
     return parser.parse_args()
 

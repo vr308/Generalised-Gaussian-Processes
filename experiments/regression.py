@@ -13,10 +13,10 @@ import json
 from itertools import product
 from datetime import datetime
 from torch.utils.data import TensorDataset, DataLoader
-
+import time
 import torch 
 import gpytorch 
-
+import pymc3 as pm
 from utils.config import LOG_DIR
 
 # Models
@@ -35,7 +35,7 @@ plt.style.use('seaborn-muted')
 
 #### Global variables 
 
-DATASETS = ["Boston", "Concrete", "Energy", "Yacht", "WineRed"]
+DATASETS = ["Energy", "WineRed"]#, "Concrete", "Energy", "Yacht", "WineRed"]
 
 MODEL_NAMES = ['SGPR', 'Bayesian_SGPR_HMC', 'SVGP', 'Bayesian_SVGP']
 MODEL_CLASS = [
@@ -45,8 +45,11 @@ MODEL_CLASS = [
             BayesianStochasticVariationalGP
             ]
 SPLIT_INDICES = [*range(10)]
-
 model_dictionary = dict(zip(MODEL_NAMES, MODEL_CLASS))
+
+## Dry-run
+#DATASETS = ['Yacht']
+#SPLIT_INDICES = [0]
 
 ##### Methods
 
@@ -68,7 +71,7 @@ def single_run(
         ###### Loading a data split ########
         
         dataset = get_dataset_class(dataset_name)(split=split_index, prop=train_test_split)
-        X_train, Y_train, X_test, Y_test = dataset.X_train, dataset.Y_train, dataset.X_test, dataset.Y_test
+        X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
         
         ###### Initialising model class, likelihood, inducing inputs ##########
         
@@ -76,7 +79,6 @@ def single_run(
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
         
         ## Init at X_train[np.random.randint(0,len(X_train), 200)]
-        #Z_init = torch.randn(num_inducing, input_dim)
         Z_init = X_train[np.random.randint(0,len(X_train), num_inducing)]
 
         model = model_class(X_train, Y_train.flatten(), likelihood, Z_init)
@@ -86,54 +88,60 @@ def single_run(
         
         if model_name != 'Bayesian_SGPR_HMC':
 
-            if model_name == 'SGPR':
+            step_sizes = None
+            trace_hyper = None  ## These variables are unused for the methods in this block.
+            perf_times = None
             
-                losses = model.train_model(optimizer, num_steps=max_iter)
+            if model_name == 'SGPR':
                 
+                start_time = time.time()
+                losses = model.train_model(optimizer, num_steps=max_iter)
+                wall_clock_secs = time.time() - start_time
+
             elif model_name in ('SVGP', 'Bayesian_SVGP'):
                 
                 train_dataset = TensorDataset(X_train, Y_train)
                 train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
                 
+                start_time = time.time()
                 losses = model.train_model(optimizer, train_loader, minibatch_size=batch_size, num_epochs=num_epochs, combine_terms=True)
+                wall_clock_secs = time.time() - start_time
+                
+            ### Predictions ###
             
-            ### Predictions
-            
-            Y_train_pred = model.posterior_predictive(X_train)
+            #Y_train_pred = model.posterior_predictive(X_train)
             Y_test_pred = model.posterior_predictive(X_test)
     
-            ### Compute Metrics  
+            ### Compute Metrics ###
             
-            rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
+            #rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
             rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
            
-            nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
+            #nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
             nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
         
         else:
             
-            break_for_hmc = np.concatenate((np.arange(100,1500,50), np.array([max_iter-1])))
-            losses, trace_hyper, step_sizes = model.train_model(optimizer, max_steps=max_iter, hmc_scheduler=break_for_hmc)
-       
-            ### Predictions
+            break_for_hmc = np.concatenate((np.arange(200,max_iter-500,100), np.array([max_iter-1])))
             
+            start_time = time.time()
+            losses, trace_hyper, step_sizes, perf_times = model.train_model(optimizer, max_steps=max_iter, hmc_scheduler=break_for_hmc)
+            wall_clock_secs = time.time() - start_time
+            
+            ### Predictions
             Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper)
     
             ### Compute Metrics  
-            
-            rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
+            y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
+            rmse_test = np.round(rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std).item(), 4)
             nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
             
-            # Saving trace summary
-            #loss_path = LOG_DIR / "loss" / experiment_name(**exp_info)
-            #np.savetxt(fname=f"{loss_path}.csv", X=losses)
-      
         
         metrics = {
                 'test_rmse': rmse_test,
                   'test_nlpd': nlpd_test,
-                  'train_rmse': rmse_train,
-                  'train_nlpd': nlpd_train
+                  'wall_clock_secs': wall_clock_secs,
+                  'perf_times': perf_times
                   }
      
         exp_info = {
@@ -146,7 +154,7 @@ def single_run(
              "num_epochs": num_epochs,
              "batch_size": batch_size,
              "train_test_split": train_test_split ,
-             "step_sizes": np.array(step_sizes)
+             "step_sizes": step_sizes
              }
         
         # One dict with all info + metrics
@@ -156,14 +164,18 @@ def single_run(
         print(dataset_name, ': Test RMSE:', rmse_test)
         print(dataset_name, ': Test NLPD:', nlpd_test)
         
-        ###### Saving losses / performance metrics for analysis and reporting #########
+        ###### Saving losses / performance metrics / traces for analysis and reporting #########
         
         date_str = datetime.now().strftime('%b_%d')
         
         log_path = LOG_DIR / date_str / experiment_name(**exp_info)
         #loss_path = LOG_DIR / "loss" / experiment_name(**exp_info)
-        
         #np.savetxt(fname=f"{loss_path}.csv", X=losses)
+        
+        if trace_hyper is not None:
+            # Saving trace summary
+            trace_path = LOG_DIR / "trace" / experiment_name(**exp_info)
+            pm.summary(trace_hyper).to_csv(f"{trace_path}.csv")
         
         results_filename = f"{log_path}__.json"
         with open(results_filename, "w") as fp:
@@ -172,6 +184,7 @@ def single_run(
 def main(args: argparse.Namespace):
         
         np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
     
         date_str = datetime.now().strftime('%b_%d')
         save_dir = LOG_DIR / date_str
@@ -179,6 +192,9 @@ def main(args: argparse.Namespace):
         
         #loss_dir = LOG_DIR / "loss" 
         #loss_dir.mkdir(parents=True, exist_ok=True)
+        
+        trace_dir = LOG_DIR / "trace"
+        trace_dir.mkdir(parents=True, exist_ok=True)
     
         print("Training GPR in parallel. GPUs may run out of memory, use CPU if this happens. "
             "To use CPU only, set environment variable CUDA_VISIBLE_DEVICES=-1")
@@ -200,9 +216,9 @@ def main(args: argparse.Namespace):
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, default='SVGP')
+    parser.add_argument("--model_name", type=str, default='Bayesian_SGPR_HMC')
     parser.add_argument("--num_inducing", type=int, default=100)
-    parser.add_argument("--seed", type=int, default=51)
+    parser.add_argument("--seed", type=int, default=45)
     parser.add_argument("--max_iters", type=int, default=2000)
     parser.add_argument("--num_epochs", type=int, default=2000)
     parser.add_argument("--batch_size", type=int, default=200)
