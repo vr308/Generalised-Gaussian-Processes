@@ -27,11 +27,13 @@ def camel_back_function(x: np.array):
     y = (4 - 2.1*x1**2 + x1**4/3)*x1**2 + x1*x2 + (-4 + 4*x2**2)*x2**2
     return y.reshape(len(x),)/torch.std(y)
 
-def get_training_dataset(X, Y, train_index):
+def get_training_dataset(X, Y, train_index, noise_scale):
     
     train_sizes = [30,100,200,400]   
     X1, X2, X3, X4 = [X[train_index[0:train_sizes[i]]] for i in np.arange(4)]
-    Y1, Y2, Y3, Y4 = [Y[train_index[0:train_sizes[i]]] for i in np.arange(4)]
+    Y1, Y2, Y3, Y4 = [Y[train_index[0:train_sizes[i]]] for i in np.arange(4) + ]
+    
+    Y1 = Y1 + torch.randn(len(Y1))*noise_scale
     return (X1, X2, X3, X4), (Y1, Y2, Y3, Y4)
 
 def get_grid_mesh():
@@ -85,8 +87,8 @@ if __name__ == "__main__":
   
     # Original function
     
-    #plt.figure()
-    #plt.contourf(xx, yy, Y.reshape(xx.shape[0], xx.shape[1]), levels=50, cmap=plt.get_cmap('jet'))
+    plt.figure()
+    plt.contourf(xx, yy, Y.reshape(xx.shape[0], xx.shape[1]), levels=50, cmap=plt.get_cmap('jet'))
 
     ##### Training data and initial inducing points
     

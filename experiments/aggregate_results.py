@@ -34,7 +34,7 @@ def parse_command_line_args() -> Namespace:
         nargs="*",
         help="Name of the log directories containing experimental results, format is e.g. Feb_12."
              "Specify more than one in case the experiment run overnight.",
-        default=["Jan_01", "Jan_02", "Jan_03"]
+        default=['Jan_23']#["Jan_01", "Jan_02", "Jan_03"]
     )
     return parser.parse_args()
 

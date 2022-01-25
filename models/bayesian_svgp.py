@@ -276,20 +276,26 @@ if __name__ == '__main__':
     #plt.figure()
     #plt.plot(y_mix_std.T)
     
-    plt.figure()
+    plt.figure(figsize=(8,5))
+    
+    plt.subplot(1,2,1)
+    plt.plot(train_x, train_y, 'bo')
     plt.plot(test_x, np.mean(y_mix_loc, axis=0),color='r')
     plt.plot(test_x, test_y)
-    #plt.plot(test_x, np.array(y_mix_loc).T, alpha=0.4, color='b')
-    plt.plot(train_x, train_y, 'bo')
     plt.scatter(model.variational_strategy.inducing_points.detach(), [-2.0]*model.num_inducing, c='g', marker='x', label='Inducing')
+    plt.title('Doubly Stochastic SVGP', fontsize='small')
+    
+    plt.subplot(1,2,2)
+    plt.plot(test_x, y_mix_loc.T ,color='b', alpha=0.3)
+    plt.title('Means of predictive mixture', fontsize='small')
 
     # ###
 
-    prior_samples = model.log_theta.hyper_prior.sample_n(200).numpy()
+    # prior_samples = model.log_theta.hyper_prior.sample_n(200).numpy()
     
-    plt.figure()
-    plt.hist(prior_samples[:,0], bins=40, alpha=0.5)
-    plt.hist(log_hyper_samples[:,0].detach().numpy(), bins=40, alpha=0.5)
+    # plt.figure()
+    # plt.hist(prior_samples[:,0], bins=40, alpha=0.5)
+    # plt.hist(log_hyper_samples[:,0].detach().numpy(), bins=40, alpha=0.5)
 
     
     # # plt.figure()
@@ -317,11 +323,11 @@ if __name__ == '__main__':
     
     # #model.visualise_posterior(test_x, y_star)
     # # # Compute metrics
-    # from utils.metrics import rmse, nlpd_mixture
+    from utils.metrics import rmse, nlpd_mixture
 
-    # rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)),test_y, torch.tensor([1.0]))
-    # nll_test = nlpd_mixture(test_y, y_mix_loc, y_mix_std)
+    rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)),test_y, torch.tensor([1.0]))
+    nll_test = nlpd_mixture(list_of_y_pred_dists, test_y,  torch.tensor([1.0]))
     
-    # print('Test RMSE: ' + str(rmse_test))
-    # print('Test NLPD: ' + str(nll_test))
+    print('Test RMSE: ' + str(rmse_test))
+    print('Test NLPD: ' + str(nll_test))
     

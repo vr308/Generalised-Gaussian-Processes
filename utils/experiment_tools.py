@@ -30,7 +30,7 @@ def experiment_name(
     num_epochs,
     batch_size
 ):
-    if model_name == 'SGPR':
+    if model_name in ('SGPR', 'Bayesian_SGPR_HMC'):
         return (
             ExperimentName(date_str)
             .add("dataset", dataset_name)
