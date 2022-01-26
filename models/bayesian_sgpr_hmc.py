@@ -149,6 +149,29 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                     trace_step_size.append(trace_hyper.get_sampler_stats('step_size')[0])
                     trace_perf_time.append(trace_hyper.get_sampler_stats('perf_counter_diff').sum())       
         return losses, trace_hyper, trace_step_size, trace_perf_time
+    
+   def train_fixed_model(self):
+       
+        self.train()
+        self.likelihood.train()
+        
+        trace_step_size = []
+        trace_perf_time = []
+        
+        print('---------------HMC step start------------------------------')
+        Z_opt = self.inducing_points.numpy()#[:,None]
+                    
+        num_tune = 500
+        num_samples = 100
+        sampler_params=None
+                   
+        trace_hyper = self.sample_optimal_variational_hyper_dist(num_samples, self.data_dim, Z_opt, num_tune, sampler_params)  
+        print('---------------HMC step finish------------------------------')
+        trace_step_size.append(trace_hyper.get_sampler_stats('step_size')[0])
+        trace_perf_time.append(trace_hyper.get_sampler_stats('perf_counter_diff').sum())  
+        
+        return trace_hyper, trace_step_size, trace_perf_time
+    
                
    def optimal_q_u(self):
        return self(self.covar_module.inducing_points)
@@ -200,80 +223,42 @@ def mixture_posterior_predictive(model, test_x, trace_hyper):
      
       return list_of_y_pred_dists
        
-# if __name__ == '__main__':
+if __name__ == '__main__':
     
-#     from utils.experiment_tools import get_dataset_class
-#     from utils.metrics import rmse, nlpd_mixture, nlpd
+    from utils.experiment_tools import get_dataset_class
+    from utils.metrics import rmse, nlpd_mixture, nlpd
 
-#     dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
-#     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
+    dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
+    X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
-#     ###### Initialising model class, likelihood, inducing inputs ##########
+    ###### Initialising model class, likelihood, inducing inputs ##########
     
-#     likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
     
-#     ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
-#     #Z_init = torch.randn(num_inducing, input_dim)
-#     Z_init = X_train[np.random.randint(0,len(X_train), 100)]
+    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
 
-#     model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
-#     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
-#     ####### Custom training depending on model class #########
+    ####### Custom training depending on model class #########
     
-#     max_steps = 500
-#     break_for_hmc = np.concatenate((np.arange(100,500,50), np.array([max_steps-1])))
-#     losses, trace_hyper, step_sizes, perf_time = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
+    trace_hyper, step_sizes, perf_time = model.train_fixed_model()
+    #max_steps = 500
+    #break_for_hmc = np.concatenate((np.arange(100,500,50), np.array([max_steps-1])))
+    #losses, trace_hyper, step_sizes, perf_time = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
     
-    # loss_greedy_protocol = losses
+    ##### Predictions ###########
     
-    # plt.figure()
-    # plt.plot(loss_greedy_protocol)
+    Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
+    y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
     
-    # model.eval()
-    # likelihood.eval()
+    #### Compute Metrics  ###########
     
-    # Y_test_pred = model.posterior_predictive(X_test)
+    rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
+    nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
 
-    # # # ### Compute Metrics ###########
-    
-    # rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
-   
-    # # ### Convert everything back to float for Naval 
-    
-    # nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
-    
-    # print('Test RMSE: ' + str(rmse_test))
-    # print('Test NLPD: ' + str(nlpd_test))
-    
-    # with pm.Model() as sampling_model:
-           
-    #         ls = pm.Gamma("ls", alpha=2, beta=1, shape=(6,), testval=(1.0,1.0,1.0,1.0,1.0,1.0))
-    #         sig_f = pm.HalfCauchy("sig_f", beta=1)
-       
-    #         cov = sig_f ** 2 * pm.gp.cov.ExpQuad(6, ls=ls)
-    #         gp = pm.gp.MarginalSparse(cov_func=cov, approx="VFE")
-               
-    #         sig_n = pm.HalfCauchy("sig_n", beta=1)
-    #         #Z_opt = pm.Normal("Xu", shape=(num_inducing, input_dim))
-   
-    #         # Z_opt is the intermediate inducing points from the optimisation stage
-    #         y_ = gp.marginal_likelihood("y", X=X_train.numpy(), Xu=Z_opt, y=Y_train.numpy(), noise=sig_n)
-       
-    #         step=pm.NUTS(step_scale=0.013651, adapt_step_size=True)
-    #         #trace = pm.sample(100, tune=0, step=step, chains=1,discard_tuned_samples=False)
-    
-    # ############ Mixture stuff
-    
-    # Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
-    # y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
-    # ### Compute Metrics  ###########
-    
-    # rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
-    # nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
-
-    # print('Test RMSE: ' + str(rmse_test))
-    # print('Test NLPD: ' + str(nlpd_test))
+    print('Test RMSE: ' + str(rmse_test))
+    print('Test NLPD: ' + str(nlpd_test))
     
     ################################################
 
