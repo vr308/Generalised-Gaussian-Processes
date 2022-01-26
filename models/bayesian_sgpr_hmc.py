@@ -162,7 +162,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
         Z_opt = self.inducing_points.numpy()#[:,None]
                     
         num_tune = 500
-        num_samples = 100
+        num_samples = 500
         sampler_params=None
                    
         trace_hyper = self.sample_optimal_variational_hyper_dist(num_samples, self.data_dim, Z_opt, num_tune, sampler_params)  
