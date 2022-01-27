@@ -37,7 +37,7 @@ def get_posterior_predictive_uncertainty_intervals(sample_means, sample_stds):
       for i in np.arange(n_test):
          print(i)
          mix = torch.distributions.Categorical(torch.ones(components,))
-         comp = torch.distributions.Normal(sample_means[:,i], sample_stds[:,i])
+         comp = torch.distributions.Normal(torch.tensor(sample_means[:,i]), torch.tensor(sample_stds[:,i]))
          gmm = torch.distributions.MixtureSameFamily(mix, comp)
          mixture_draws = gmm.sample((1000,))
          lower, upper = st.scoreatpercentile(mixture_draws, per=[2.5, 97.5])
