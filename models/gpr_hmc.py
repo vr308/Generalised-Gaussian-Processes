@@ -67,8 +67,8 @@ class GPR_HMC(gpytorch.models.ExactGP):
         trace_perf_time = []
         
         print('---------------HMC step start------------------------------')                    
-        num_tune = 500
-        num_samples = 500
+        num_tune = 50
+        num_samples = 10
                    
         trace_hyper = self.sample_optimal_variational_hyper_dist(num_samples, self.data_dim, num_tune)  
         print('---------------HMC step finish------------------------------')
@@ -81,7 +81,7 @@ class GPR_HMC(gpytorch.models.ExactGP):
    def optimal_q_u(self):
        return self(self.covar_module.inducing_points)
        
-def mixture_posterior_predictive(model, test_x, trace_hyper):
+def full_mixture_posterior_predictive(model, test_x, trace_hyper):
      
       ''' Returns the mixture posterior predictive multivariate normal '''
      
@@ -111,7 +111,7 @@ def mixture_posterior_predictive(model, test_x, trace_hyper):
               pred = model.likelihood(model(test_x))
               
               try:
-                    chol = torch.linalg.cholesky(pred.covariance_matrix + torch.eye(len(test_x))*1e-5)
+                    chol = torch.linalg.cholesky(pred.covariance_matrix + torch.eye(len(test_x))*1e-2)
                     list_of_y_pred_dists.append(pred)
               except RuntimeError:
                    print('Not psd for sample ' + str(i))
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     from utils.experiment_tools import get_dataset_class
     from utils.metrics import rmse, nlpd_mixture, nlpd
 
-    dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
+    dataset = get_dataset_class('Concrete')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
     ###### Initialising model class, likelihood, inducing inputs ##########
@@ -138,7 +138,7 @@ if __name__ == '__main__':
       
     ##### Predictions ###########
     
-    Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
+    Y_test_pred_list = full_mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
     y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
     
     #### Compute Metrics  ###########

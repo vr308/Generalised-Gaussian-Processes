@@ -49,7 +49,6 @@ def visualise_posterior(model, X_test, Y_test, Y_test_pred, mixture=True, title=
     plt.scatter(model.train_x.numpy(), model.train_y.numpy(), c='k', marker='x', alpha=0.7, label='Train')
     plt.plot(X_test, Y_test, color='b', linestyle='dashed', alpha=0.7, label='True')
     #ax.set_ylim([-3, 3])
-    plt.legend(fontsize='small')
     plt.title(title)
 
 def visualise_train(model, new_fig=True):

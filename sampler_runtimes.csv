@@ -1,0 +1,4 @@
+Model,Boston,Boston_se,Concrete,Concrete_se,Energy,Energy_se,WineRed,WineRed_se,Yacht,Yacht_se
+SGPR + HMC,14.57,0.16,23.72,0.25,39.8,0.79,32.83,0.53,8.63,0.25
+JointHMC,38.83,0.32,65.67,0.32,50.43,0.43,89.21,0.38,29.42,0.55
+GPR + HMC,27.88,0.6,252.16,5.8,89.92,3.91,478.54,14.2,10.19,0.12

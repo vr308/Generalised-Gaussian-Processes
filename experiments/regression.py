@@ -24,6 +24,7 @@ from models.sgpr import SparseGPR
 from models.svgp import StochasticVariationalGP
 from models.bayesian_svgp import BayesianStochasticVariationalGP
 from models.bayesian_sgpr_hmc import BayesianSparseGPR_HMC, mixture_posterior_predictive
+from models.gpr_hmc import GPR_HMC, full_mixture_posterior_predictive
 
 # Metrics and Viz
 from utils.metrics import rmse, nlpd, nlpd_mixture
@@ -35,21 +36,21 @@ plt.style.use('seaborn-muted')
 
 #### Global variables 
 
-DATASETS = ["Energy", "WineRed"]#, "Concrete", "Energy", "Yacht", "WineRed"]
-
-MODEL_NAMES = ['SGPR', 'Bayesian_SGPR_HMC', 'SVGP', 'Bayesian_SVGP']
+DATASETS = ["Boston", "Concrete", "Energy", "WineRed", "Yacht"]
+MODEL_NAMES = ['SGPR', 'Bayesian_SGPR_HMC', 'SVGP', 'Bayesian_SVGP', 'GPR_HMC']
 MODEL_CLASS = [
             SparseGPR,
             BayesianSparseGPR_HMC,
             StochasticVariationalGP,
-            BayesianStochasticVariationalGP
+            BayesianStochasticVariationalGP,
+            GPR_HMC
             ]
 SPLIT_INDICES = [*range(10)]
 model_dictionary = dict(zip(MODEL_NAMES, MODEL_CLASS))
 
 ## Dry-run
 #DATASETS = ['Yacht']
-#SPLIT_INDICES = [0]
+#SPLIT_INDICES = [2,3,4,5,6,7,8,9]
 
 ##### Methods
 
@@ -81,12 +82,15 @@ def single_run(
         ## Init at X_train[np.random.randint(0,len(X_train), 200)]
         Z_init = X_train[np.random.randint(0,len(X_train), num_inducing)]
 
-        model = model_class(X_train, Y_train.flatten(), likelihood, Z_init)
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        if model_name != 'GPR_HMC':
+            model = model_class(X_train, Y_train.flatten(), likelihood, Z_init)
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        else:
+            model = model_class(X_train, Y_train.flatten(), likelihood)
         
         ####### Custom training call depending on model class #########
         
-        if model_name != 'Bayesian_SGPR_HMC':
+        if model_name not in ('Bayesian_SGPR_HMC', 'GPR_HMC'):
 
             step_sizes = None
             trace_hyper = None  ## These variables are unused for the methods in this block.
@@ -122,14 +126,27 @@ def single_run(
         
         else:
             
-            break_for_hmc = np.concatenate((np.arange(200,max_iter-500,100), np.array([max_iter-1])))
+            if model_name == 'Bayesian_SGPR_HMC':
             
-            start_time = time.time()
-            losses, trace_hyper, step_sizes, perf_times = model.train_model(optimizer, max_steps=max_iter, hmc_scheduler=break_for_hmc)
-            wall_clock_secs = time.time() - start_time
-            
-            ### Predictions
-            Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper)
+                break_for_hmc = np.concatenate((np.arange(200,max_iter-500,100), np.array([max_iter-1])))
+                
+                start_time = time.time()
+                #losses, trace_hyper, step_sizes, perf_times = model.train_model(optimizer, max_steps=max_iter, hmc_scheduler=break_for_hmc)
+                trace_hyper, step_sizes, perf_times = model.train_fixed_model()
+                wall_clock_secs = time.time() - start_time
+                
+                ### Predictions
+                Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper)
+                
+            else:
+                
+                print('Full GPR with HMC')
+                start_time = time.time()
+                trace_hyper, step_sizes, perf_times = model.train_model()
+                wall_clock_secs = time.time() - start_time
+                
+                ### Predictions
+                Y_test_pred_list = full_mixture_posterior_predictive(model, X_test, trace_hyper)
     
             ### Compute Metrics  
             y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    

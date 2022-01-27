@@ -10,7 +10,8 @@ in a tabular format - mainly aggregating over splits (there is a .json for each 
 ## Jan 23 has SVGP 
 ## Dec 30/31 as SGPR
 ## Jan 25 has BSGPR HMC
-## Jan 25 has GPR+HMC
+## Jan 26 has GPR+HMC / Fixed Z
+## Jan 27 has SGPMC
 
 import sys
 from argparse import ArgumentParser, Namespace
@@ -83,3 +84,15 @@ if __name__ == "__main__":
 
     pd.set_option("display.max_rows", None, "display.max_columns", None)
     print(summary)
+    
+    ### compute analysis
+    time_metrics = ['wall_clock_secs', 'perf_times']
+    
+    if df['model_name'][0] == 'GPR_HMC':
+        df['perf_times'] = [x[0] for x in df['perf_times']]
+        
+    if df['model_name'][0] == 'Bayesian_SGPR_HMC':
+        df['perf_times'] = [np.sum(x) for x in df['perf_times']]
+    
+    perf_summary = df.groupby(['dataset_name', 'model_name'])[time_metrics].agg(['mean', standard_error])
+    print(perf_summary)
