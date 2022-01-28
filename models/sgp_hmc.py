@@ -52,7 +52,7 @@ def train_sgp_hmc(data, Z_init, input_dims, tune, num_samples):
     
     # Initial warm-up (as per gpflow tutorial)
     optimizer = gpflow.optimizers.Scipy()
-    optimizer.minimize(model.training_loss, model.trainable_variables, options={"maxiter": 50})
+    optimizer.minimize(model.training_loss, model.trainable_variables, options={"maxiter": 100})
     set_trainable(model.inducing_variable, False)
 
     ## HMC step

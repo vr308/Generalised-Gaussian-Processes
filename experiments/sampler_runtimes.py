@@ -11,28 +11,30 @@ from utils.config import RESULTS_DIR
 
 filename = 'sampler_runtimes.csv'
 df = pd.read_csv(filename, sep=',')
-fig = plt.figure(figsize=(16,4))
 
-_ax = fig.add_subplot(111, frame_on=False)
-_ax.tick_params(labelcolor='w', top=False, bottom=False, left=False, right=False)
-colors = ['orange', 'steelblue','green']
 dataset_name = ['Boston', 'Concrete', 'Energy', 'WineRed', 'Yacht']
+sgpr_hmc = np.array(df[df['Model'] == 'SGPR + HMC'][dataset_name])
+joint_hmc = np.array(df[df['Model'] == 'JointHMC'][dataset_name])
+gpr_hmc = np.array(df[df['Model'] == 'GPR + HMC'][dataset_name])
 
-for _ in range(5): # iterate over subplots
-    n_plot = _ + 1
-    ax = fig.add_subplot(1,5,n_plot) 
-    for m in range(7): # iterate over models within each subplot
-        mean = df[[col for col in df if col.startswith(dataset_name[m])][0]][_]
-        se = df[[col for col in df if col.startswith(dataset_name[m])][1]][_]
-        ax.errorbar(x=mean, y=m, xerr=se, c=colors[m], marker='o', barsabove=True, capsize=4)
-    ax.set_title(df['dataset_name'][_], fontsize='small')
-    if (n_plot == 1):
-        ax.set_yticks(ticks=np.arange(7))
-        ax.set_yticklabels(labels=models)
-    elif (n_plot == 5):
-        ax.set_yticks(ticks=np.arange(7))
-        ax.set_yticklabels(labels=models)
-        ax.yaxis.set_ticks_position('right')
-    else:
-       ax.set_yticks(ticks=np.arange(7))
-       ax.tick_params(axis='y', labelcolor="none", left=False)
+sgpr_hmc_se = np.array(df[[col for col in df if col.endswith('se')]])[0]
+joint_hmc_se = np.array(df[[col for col in df if col.endswith('se')]])[1]
+gpr_hmc_se = np.array(df[[col for col in df if col.endswith('se')]])[2]
+
+x = np.arange(len(dataset_name))  # the label locations
+width = 0.35  # the width of the bars
+
+fig, ax = plt.subplots()
+rects1 = ax.bar(x - width/3, gpr_hmc.squeeze(), width, yerr=gpr_hmc_se, label='GPR + HMC', color='orange',capsize=5, ecolor='black')
+rects2 = ax.bar(x + width/2, joint_hmc.squeeze(), width, yerr=joint_hmc_se, label='JointHMC', color='steelblue')
+rects3 = ax.bar(x + width, sgpr_hmc.squeeze(), width, yerr=sgpr_hmc_se, label='SGPR + HMC', color='green')
+
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_ylabel('Total sampling seconds')
+ax.set_title('Wall clock seconds for total MCMC samples')
+plt.xticks(x, dataset_name)
+ax.legend()
+ax.set_yscale('log')
+fig.tight_layout()
+plt.savefig(RESULTS_DIR/'sampling_seconds.png')
+

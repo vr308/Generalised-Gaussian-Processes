@@ -10,6 +10,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils.config import RESULTS_DIR
 
+plt.style.use('seaborn')
+
 filename = 'benchmarks_nlpd.csv'
 df = pd.read_csv(filename, sep=',')
 fig = plt.figure(figsize=(16,4))
@@ -48,7 +50,7 @@ df = pd.read_csv(filename, sep=',')
 fig = plt.figure(figsize=(16,4))
 _ax = fig.add_subplot(111, frame_on=False)
 _ax.tick_params(labelcolor='w', top=False, bottom=False, left=False, right=False)
-colors = ['b', 'magenta', 'steelblue', 'green', 'r','orange']
+colors = ['b', 'magenta', 'steelblue', 'r', 'g','orange']
 model_cols = ['svgp_', 'fixed_z', 'sgpmc_', 'sgpr_', 'sgpr_hmc_', 'gpr_hmc']
 models = ['SVGP', 'SGPR + HMC (Fix Z)', 'JointHMC', 'SGPR (ML-II)', 'SGPR + HMC (Adapt Z)','GPR + HMC']
 #models = df.columns[3:]
