@@ -212,6 +212,6 @@ if __name__ == '__main__':
     joint_hmc = rmse(torch.tensor(pred_mean), np.array(Y_test), torch.tensor([1.0]))
     print('RMSE Joint_HMC ' + str(joint_hmc))
 
-    nll_joint_hmc = nlpd_mixture(y_pred_dists[0:5], torch.tensor(np.array(Y_test).squeeze()), torch.tensor([1.0]))
+    nll_joint_hmc = nlpd_mixture(y_pred_dists, torch.tensor(np.array(Y_test).squeeze()), torch.tensor([1.0]))
     print('NLPD Joint HMC ' + str(nll_joint_hmc))
 

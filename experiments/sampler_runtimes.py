@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from utils.config import RESULTS_DIR
+plt.style.use('seaborn')
 
 filename = 'sampler_runtimes.csv'
 df = pd.read_csv(filename, sep=',')
@@ -24,10 +25,11 @@ gpr_hmc_se = np.array(df[[col for col in df if col.endswith('se')]])[2]
 x = np.arange(len(dataset_name))  # the label locations
 width = 0.35  # the width of the bars
 
-fig, ax = plt.subplots()
-rects1 = ax.bar(x - width/3, gpr_hmc.squeeze(), width, yerr=gpr_hmc_se, label='GPR + HMC', color='orange',capsize=5, ecolor='black')
-rects2 = ax.bar(x + width/2, joint_hmc.squeeze(), width, yerr=joint_hmc_se, label='JointHMC', color='steelblue')
-rects3 = ax.bar(x + width, sgpr_hmc.squeeze(), width, yerr=sgpr_hmc_se, label='SGPR + HMC', color='green')
+fig, ax = plt.subplots(figsize=(4,5))
+rects1 = ax.bar(x - width/3, gpr_hmc.squeeze(), width, yerr=gpr_hmc_se, label='GPR + HMC', color='orange',error_kw={'markeredgewidth':1},capsize=5, ecolor='k')
+rects2 = ax.bar(x + width/2, joint_hmc.squeeze(), width, yerr=joint_hmc_se, label='JointHMC', 
+                color='steelblue',error_kw={'markeredgewidth':1},capsize=5, ecolor='k')
+rects3 = ax.bar(x + width, sgpr_hmc.squeeze(), width, yerr=sgpr_hmc_se, label='SGPR + HMC', color='green',error_kw={'markeredgewidth':1},capsize=5, ecolor='k')
 
 # Add some text for labels, title and custom x-axis tick labels, etc.
 ax.set_ylabel('Total sampling seconds')

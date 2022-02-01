@@ -125,71 +125,71 @@ def predict_sgpmc(model, hmc_helper, samples, X_test):
     pred_mean = np.mean(f_means, axis=0)
     return pred_mean, y_pred_dists, lower, upper
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     
-    from utils.experiment_tools import get_dataset_class
-    from utils.metrics import rmse, nlpd_mixture, nlpd
+#     from utils.experiment_tools import get_dataset_class
+#     from utils.metrics import rmse, nlpd_mixture, nlpd
 
-    dataset = get_dataset_class('Yacht')(split=7, prop=0.8)
-    X_train, Y_train, X_test, Y_test = f64(dataset.X_train), f64(dataset.Y_train)[:,None], f64(dataset.X_test), f64(dataset.Y_test)[:,None]
+#     dataset = get_dataset_class('Yacht')(split=7, prop=0.8)
+#     X_train, Y_train, X_test, Y_test = f64(dataset.X_train), f64(dataset.Y_train)[:,None], f64(dataset.X_test), f64(dataset.Y_test)[:,None]
 
 
-    ## Creating 1d synthetic data
+#     ## Creating 1d synthetic data
 
-    # N = 1000
+#     # N = 1000
     
-    # rng = np.random.RandomState(45)
+#     # rng = np.random.RandomState(45)
     
-    # X = rng.randn(N) * 2 - 1  # X values
-    # Y = func(X) + 0.4 * rng.randn(N)  # Noisy Y values
+#     # X = rng.randn(N) * 2 - 1  # X values
+#     # Y = func(X) + 0.4 * rng.randn(N)  # Noisy Y values
         
-    # train_index = np.where((X < -2) | (X > 2))
+#     # train_index = np.where((X < -2) | (X > 2))
     
-    # # Train
-    # X_train = X[train_index][:,None]
-    # Y_train = Y[train_index][:,None]
+#     # # Train
+#     # X_train = X[train_index][:,None]
+#     # Y_train = Y[train_index][:,None]
     
-    # ## Test
-    # X_test = f64(tf.linspace(-8.0, 8.0, 1000)[:,None])
-    # Y_test = f64(func(X_test))
+#     # ## Test
+#     # X_test = f64(tf.linspace(-8.0, 8.0, 1000)[:,None])
+#     # Y_test = f64(func(X_test))
     
-    data = (X_train, Y_train)
-    data_test = (X_test, Y_test)
+#     data = (X_train, Y_train)
+#     data_test = (X_test, Y_test)
     
-    ## Train model
-    Z_init = np.array(X_train)[np.random.randint(0, len(X_train), 100)]
-    model, hmc_helper, samples, wall_clock_secs = train_sgp_hmc(data, Z_init, input_dims=X_train.shape[-1], tune=500, num_samples=1000)
+#     ## Train model
+#     Z_init = np.array(X_train)[np.random.randint(0, len(X_train), 100)]
+#     model, hmc_helper, samples, wall_clock_secs = train_sgp_hmc(data, Z_init, input_dims=X_train.shape[-1], tune=500, num_samples=1000)
     
-    # ## Predictions
+#     # ## Predictions
     
-    pred_mean, y_pred_dists, lower, upper = predict_sgpmc(model, hmc_helper, samples, X_test)
+#     pred_mean, y_pred_dists, lower, upper = predict_sgpmc(model, hmc_helper, samples, X_test)
     
-    # # ## Visualisation
+#     # # ## Visualisation
     
-    # # # lower=lower.detach().numpy()
-    # # # upper=upper.detach().numpy()
-    # # # pred_mean = Y_test_pred.mean.numpy()
-    # plt.subplot(133)
-    # plt.plot(X_test.numpy(), pred_mean, 'b-', label='Mean')
-    # plt.scatter(Z_init, [-2.5]*25, c='r', marker='x', label='Inducing')
-    # plt.fill_between(X_test[:,0], lower, upper, alpha=0.5, label=r'$\pm$2\sigma', color='g')
-    # plt.scatter(X_train[:,0], Y_train[:,0], c='k', marker='x', alpha=0.7, label='Train')
-    # plt.plot(X_test[:,0], Y_test[:,0], color='b', linestyle='dashed', alpha=0.7, label='True')
-    # # #ax.set_ylim([-3, 3])
-    # plt.legend(fontsize='small')
-    #plt.title(title)
+#     # # # lower=lower.detach().numpy()
+#     # # # upper=upper.detach().numpy()
+#     # # # pred_mean = Y_test_pred.mean.numpy()
+#     # plt.subplot(133)
+#     # plt.plot(X_test.numpy(), pred_mean, 'b-', label='Mean')
+#     # plt.scatter(Z_init, [-2.5]*25, c='r', marker='x', label='Inducing')
+#     # plt.fill_between(X_test[:,0], lower, upper, alpha=0.5, label=r'$\pm$2\sigma', color='g')
+#     # plt.scatter(X_train[:,0], Y_train[:,0], c='k', marker='x', alpha=0.7, label='Train')
+#     # plt.plot(X_test[:,0], Y_test[:,0], color='b', linestyle='dashed', alpha=0.7, label='True')
+#     # # #ax.set_ylim([-3, 3])
+#     # plt.legend(fontsize='small')
+#     #plt.title(title)
     
-    ## Metrics
-    from utils.metrics import rmse, nlpd_mixture
-    import torch
+#     ## Metrics
+#     from utils.metrics import rmse, nlpd_mixture
+#     import torch
         
-    joint_hmc = rmse(torch.tensor(pred_mean), np.array(Y_test).flatten(), dataset.Y_std)
+#     joint_hmc = rmse(torch.tensor(pred_mean), np.array(Y_test).flatten(), dataset.Y_std)
 
-    print('RMSE Joint_HMC ' + str(joint_hmc))
+#     print('RMSE Joint_HMC ' + str(joint_hmc))
 
-    nll_hmc = nlpd_mixture(y_pred_dists, torch.tensor(np.array(Y_test).squeeze()), dataset.Y_std)
+#     nll_hmc = nlpd_mixture(y_pred_dists, torch.tensor(np.array(Y_test).squeeze()), dataset.Y_std)
     
-    print('NLPD Joint HMC ' + str(nll_hmc))
+#     print('NLPD Joint HMC ' + str(nll_hmc))
         
     
     

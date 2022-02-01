@@ -31,7 +31,7 @@ from utils.metrics import rmse, nlpd, nlpd_mixture
 from utils.experiment_tools import get_dataset_class, experiment_name
 import matplotlib.pyplot as plt
 
-gpytorch.settings.cholesky_jitter(float=1e-4)
+gpytorch.settings.cholesky_jitter(float=1e-5)
 plt.style.use('seaborn-muted')
 
 #### Global variables 
@@ -128,7 +128,7 @@ def single_run(
             
             if model_name == 'Bayesian_SGPR_HMC':
             
-                break_for_hmc = np.concatenate((np.arange(200,max_iter-500,100), np.array([max_iter-1])))
+                break_for_hmc = np.concatenate((np.arange(200,max_iter-500,50), np.array([max_iter-1])))
                 
                 start_time = time.time()
                 #losses, trace_hyper, step_sizes, perf_times = model.train_model(optimizer, max_steps=max_iter, hmc_scheduler=break_for_hmc)

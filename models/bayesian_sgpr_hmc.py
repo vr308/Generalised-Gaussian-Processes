@@ -223,44 +223,44 @@ def mixture_posterior_predictive(model, test_x, trace_hyper):
      
       return list_of_y_pred_dists
        
-if __name__ == '__main__':
+# if __name__ == '__main__':
     
-    from utils.experiment_tools import get_dataset_class
-    from utils.metrics import rmse, nlpd_mixture, nlpd
+#     from utils.experiment_tools import get_dataset_class
+#     from utils.metrics import rmse, nlpd_mixture, nlpd
 
-    dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
-    X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
+#     dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
+#     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
-    ###### Initialising model class, likelihood, inducing inputs ##########
+#     ###### Initialising model class, likelihood, inducing inputs ##########
     
-    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+#     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     
-    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
+#     Z_init = X_train[np.random.randint(0,len(X_train), 100)]
 
-    model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+#     model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
+#     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
-    ####### Custom training depending on model class #########
+#     ####### Custom training depending on model class #########
     
-    trace_hyper, step_sizes, perf_time = model.train_fixed_model()
-    #max_steps = 500
-    #break_for_hmc = np.concatenate((np.arange(100,500,50), np.array([max_steps-1])))
-    #losses, trace_hyper, step_sizes, perf_time = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
+#     trace_hyper, step_sizes, perf_time = model.train_fixed_model()
+#     #max_steps = 500
+#     #break_for_hmc = np.concatenate((np.arange(100,500,50), np.array([max_steps-1])))
+#     #losses, trace_hyper, step_sizes, perf_time = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
     
-    ##### Predictions ###########
+#     ##### Predictions ###########
     
-    Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
-    y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
+#     Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
+#     y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
     
-    #### Compute Metrics  ###########
+#     #### Compute Metrics  ###########
     
-    rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
-    nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
+#     rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
+#     nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
 
-    print('Test RMSE: ' + str(rmse_test))
-    print('Test NLPD: ' + str(nlpd_test))
+#     print('Test RMSE: ' + str(rmse_test))
+#     print('Test NLPD: ' + str(nlpd_test))
     
-    ################################################
+#     ################################################
 
     # N = 1000  # Number of training observations
 
