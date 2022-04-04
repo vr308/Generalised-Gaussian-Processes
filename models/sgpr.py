@@ -199,11 +199,11 @@ if __name__ == "__main__":
     # visualise_posterior(model, test_x, test_y, test_pred, mixture=False, title=None, new_fig=True)
 
 
-    ########### Boston example
+    ########### Elevator example
     
     from utils.experiment_tools import get_dataset_class
     import numpy as np
-    from utils.metrics import rmse, nlpd
+    from utils.metrics import rmse, nlpd, nlpd_marginal
 
     dataset = get_dataset_class('Elevator')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
@@ -231,7 +231,6 @@ if __name__ == "__main__":
         model = model.cuda()
         likelihood = likelihood.cuda()
        
-    
     ####### Custom training depending on model class #########
     
     losses = model.train_model(optimizer, max_steps=4000)
@@ -247,7 +246,7 @@ if __name__ == "__main__":
     # ### Convert everything back to float for Naval 
     
     # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
-    nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
+    nlpd_test = np.round(nlpd_marginal(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
 
 
 # Verify: elbo, q*(u), p(f*|y)
