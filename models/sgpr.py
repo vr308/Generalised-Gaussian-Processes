@@ -205,7 +205,7 @@ if __name__ == "__main__":
     import numpy as np
     from utils.metrics import rmse, nlpd
 
-    dataset = get_dataset_class('Yacht')(split=0, prop=0.8)
+    dataset = get_dataset_class('Elevator')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
     ###### Initialising model class, likelihood, inducing inputs ##########
@@ -215,10 +215,22 @@ if __name__ == "__main__":
     
     ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
     #Z_init = torch.randn(num_inducing, input_dim)
-    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
+    Z_init = X_train[np.random.randint(0,len(X_train), 500)]
+    
+    if torch.cuda.is_available():
+        X_train = X_train.cuda()
+        X_test = X_test.cuda()
+        Y_train = Y_train.cuda()
+        Y_test = Y_test.cuda()
+        Z_init = Z_init.cuda()
 
     model = SparseGPR(X_train, Y_train.flatten(), likelihood, Z_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    
+    if torch.cuda.is_available():
+        model = model.cuda()
+        likelihood = likelihood.cuda()
+       
     
     ####### Custom training depending on model class #########
     
@@ -235,7 +247,7 @@ if __name__ == "__main__":
     # ### Convert everything back to float for Naval 
     
     # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
-    # nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
+    nlpd_test = np.round(nlpd(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
 
 
 # Verify: elbo, q*(u), p(f*|y)

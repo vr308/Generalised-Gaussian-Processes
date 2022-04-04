@@ -20,7 +20,7 @@ import os
 import pandas
 import logging
 import torch
-
+from scipy.io import loadmat
 from urllib.request import urlopen
 logging.getLogger().setLevel(logging.INFO)
 import zipfile
@@ -250,6 +250,17 @@ class PineSaplings(Dataset):
             data = pandas.read_csv(self.datapath, index_col=0).values[:-1,:]
             return data[:, :-1], data[:, -1].reshape(-1, 1)
         
+
+@add_regression
+class Elevator(Dataset):
+    N, D, name = 16599, 18, 'elevator'
+    filename = 'elevators.mat'
+    
+    def read_data(self):
+            data = loadmat(self.datapath)['data']
+            return data[:, :-1], data[:, -1].reshape(-1, 1)
+
+        
 @add_classification
 class Banana(Dataset):
     N, D, name = 5300, 2, 'banana'
@@ -452,6 +463,6 @@ def get_classification_data(name, *args, **kwargs):
 
 ## Usage
 
-#data = get_regression_data('coal')
+data = get_regression_data('elevator')
 #data = get_classification_data('banana')
 

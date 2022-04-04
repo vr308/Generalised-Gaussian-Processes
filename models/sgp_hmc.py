@@ -125,13 +125,13 @@ def predict_sgpmc(model, hmc_helper, samples, X_test):
     pred_mean = np.mean(f_means, axis=0)
     return pred_mean, y_pred_dists, lower, upper
 
-# if __name__ == '__main__':
+if __name__ == '__main__':
     
-#     from utils.experiment_tools import get_dataset_class
-#     from utils.metrics import rmse, nlpd_mixture, nlpd
+    from utils.experiment_tools import get_dataset_class
+    from utils.metrics import rmse, nlpd_mixture, nlpd
 
-#     dataset = get_dataset_class('Yacht')(split=7, prop=0.8)
-#     X_train, Y_train, X_test, Y_test = f64(dataset.X_train), f64(dataset.Y_train)[:,None], f64(dataset.X_test), f64(dataset.Y_test)[:,None]
+    dataset = get_dataset_class('Elevator')(split=7, prop=0.8)
+    X_train, Y_train, X_test, Y_test = f64(dataset.X_train), f64(dataset.Y_train)[:,None], f64(dataset.X_test), f64(dataset.Y_test)[:,None]
 
 
 #     ## Creating 1d synthetic data
@@ -153,12 +153,12 @@ def predict_sgpmc(model, hmc_helper, samples, X_test):
 #     # X_test = f64(tf.linspace(-8.0, 8.0, 1000)[:,None])
 #     # Y_test = f64(func(X_test))
     
-#     data = (X_train, Y_train)
-#     data_test = (X_test, Y_test)
+    data = (X_train, Y_train)
+    data_test = (X_test, Y_test)
     
-#     ## Train model
-#     Z_init = np.array(X_train)[np.random.randint(0, len(X_train), 100)]
-#     model, hmc_helper, samples, wall_clock_secs = train_sgp_hmc(data, Z_init, input_dims=X_train.shape[-1], tune=500, num_samples=1000)
+    ## Train model
+    Z_init = np.array(X_train)[np.random.randint(0, len(X_train), 300)]
+    model, hmc_helper, samples, wall_clock_secs = train_sgp_hmc(data, Z_init, input_dims=X_train.shape[-1], tune=100, num_samples=100)
     
 #     # ## Predictions
     
