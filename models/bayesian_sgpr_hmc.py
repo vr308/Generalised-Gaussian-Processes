@@ -58,10 +58,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                 
         
    def sample_optimal_variational_hyper_dist(self, n_samples, input_dim, Z_opt, tune, sampler_params):
-       
-       print('copying the inducing points to cpu before sampling loop')
-       #Z_opt_cpu = Z_opt.detach().cpu().numpy()
-       
+              
        with pm.Model() as model_pymc3:
            
             ls = pm.Gamma("ls", alpha=2, beta=1, shape=(input_dim,))
@@ -126,7 +123,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
               if trace_hyper is not None:
                   loss = 0.0
                   for i in range(len(trace_hyper)):
-                      hyper_sample = trace_hyper[i].cuda()
+                      hyper_sample = trace_hyper[i]
                       self.update_model_to_hyper(elbo, hyper_sample)
                       output = self(self.train_x)
                       loss += -elbo(output, self.train_y).sum()/len(trace_hyper)
@@ -142,8 +139,8 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                     #Z_opt = self.inducing_points.numpy()[:,None]
                     
                     if n_iter in (hmc_scheduler[0], hmc_scheduler[-1]):
-                        num_tune = 200
-                        num_samples = 50
+                        num_tune = 100
+                        num_samples = 20
                         sampler_params=None
                     else:
                         num_tune = 25
@@ -223,7 +220,7 @@ def mixture_posterior_predictive(model, test_x, trace_hyper):
               pred = model.likelihood(model(test_x))
               
               try:
-                    chol = torch.linalg.cholesky(pred.covariance_matrix + torch.eye(len(test_x))*1e-5)
+                    chol = torch.linalg.cholesky(pred.covariance_matrix + torch.eye(len(test_x))*1e-4)
                     list_of_y_pred_dists.append(pred)
               except RuntimeError:
                    print('Not psd for sample ' + str(i))
@@ -242,33 +239,34 @@ if __name__ == '__main__':
     
     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     
-    Z_init = X_train[np.random.randint(0,len(X_train), 300)]
+    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
     
-    if torch.cuda.is_available():
-        X_train = X_train.cuda()
-        X_test = X_test.cuda()
-        Y_train = Y_train.cuda()
-        Y_test = Y_test.cuda()
-        Z_init = Z_init.cuda()
+    # if torch.cuda.is_available():
+    #     X_train = X_train.cuda()
+    #     X_test = X_test.cuda()
+    #     Y_train = Y_train.cuda()
+    #     Y_test = Y_test.cuda()
+    #     Z_init = Z_init.cuda()
 
     model = BayesianSparseGPR_HMC(X_train,Y_train, likelihood, Z_init)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
     
-    if torch.cuda.is_available():
-        model = model.cuda()
-        likelihood = likelihood.cuda()
+    # if torch.cuda.is_available():
+    #     model = model.cuda()
+    #     likelihood = likelihood.cuda()
     
     ######## Custom training depending on model class #########
     
 #     trace_hyper, step_sizes, perf_time = model.train_fixed_model()
     max_steps = 500
     break_for_hmc = np.concatenate((np.arange(100,500,50), np.array([max_steps-1])))
+    break_for_hmc = [499]
     losses, trace_hyper, step_sizes, perf_time = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
     
 #     ##### Predictions ###########
     
-#     Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
-#     y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
+    Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace) ### a list of predictive distributions
+    y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
     
 #     #### Compute Metrics  ###########
     
@@ -343,6 +341,24 @@ if __name__ == '__main__':
     
     # print('Test RMSE: ' + str(rmse_test))
     # print('Test NLPD: ' + str(nll_test))
+    
+    with pm.Model() as model_pymc3:
+        
+         ls = pm.Gamma("ls", alpha=2, beta=1, shape=(18,))
+         sig_f = pm.HalfCauchy("sig_f", beta=1)
+     
+         cov = sig_f ** 2 * pm.gp.cov.ExpQuad(18, ls=ls)
+         gp = pm.gp.MarginalSparse(cov_func=cov, approx="VFE")
+             
+         sig_n = pm.HalfCauchy("sig_n", beta=1)
+         
+         # Z_opt is the intermediate inducing points from the optimisation stage
+         y_ = gp.marginal_likelihood("y", X=X_train, Xu=Z_init, y=Y_train, noise=sig_n)
+     
+         step = pm.NUTS()
+             
+         trace = pm.sample(100, tune=100, chains=1, step=step, return_inferencedata=False)   
+         
     
  
  
