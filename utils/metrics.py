@@ -76,18 +76,26 @@ def nlpd_mixture(Y_test_pred_list, Y_test, Y_std):
             test_pred = Y_test_pred_list[i]
             components.append(nlpd(test_pred, Y_test, Y_std).detach().item())
       return np.mean(components)
-  
 
 def negative_log_predictive_mixture_density(test_y, mix_means, y_mix_std, Y_std):
+
+def negative_log_predictive_mixture_density(Y_test, y_mix_loc, y_mix_std, Y_std):
+
       
       lppd_per_point = []
-      for i in np.arange(len(test_y)):
+      for i in np.arange(len(Y_test)):
             components = []
+
             for j in np.arange(len(mix_means)):
                   components.append(stats.norm.logpdf(test_y[i], mix_means[:,i][j], y_mix_std[:,i][j])- np.log(Y_std))
             lppd_per_point.append(np.mean(components))
       return -np.round(np.mean(lppd_per_point),3)
 
+
+            for j in np.arange(len(y_mix_loc)):
+                  components.append(st.norm.logpdf(Y_test[i], y_mix_loc[:,i][j], y_mix_std[:,i][j]) - np.log(Y_std))
+            lppd_per_point.append(np.mean(components))
+      return -np.round(np.mean(lppd_per_point),3)
 
 # def nlpd_mixture(Y_test, mix_means, mix_std, num_mix):
       
