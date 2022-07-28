@@ -60,10 +60,7 @@ class SparseGPR(gpytorch.models.ExactGP):
         trace_term = 0.5*(diag/noise_diag).sum()
 
         return expected_log_lik, trace_term
-
-    def smart_init(self):
-        return
-
+    
     @staticmethod
     def optimization_trace(trace_states, states, grad_params):
         trace_states.append({param_name: param.numpy() for param_name, param in states.items() if param_name in grad_params})
@@ -205,7 +202,7 @@ if __name__ == "__main__":
     import numpy as np
     from utils.metrics import rmse, nlpd, nlpd_marginal
 
-    dataset = get_dataset_class('Elevator')(split=0, prop=0.8)
+    dataset = get_dataset_class('Concrete')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
     ###### Initialising model class, likelihood, inducing inputs ##########
@@ -239,14 +236,15 @@ if __name__ == "__main__":
     Y_test_pred = model.posterior_predictive(X_test)
 
     # ### Compute Metrics  ###########
+    # import scipy.stats as st
     
-    #rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
-    rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
+    # #rmse_train = np.round(rmse(Y_train_pred.loc, Y_train, dataset.Y_std).item(), 4)
+    # rmse_test = np.round(rmse(Y_test_pred.loc, Y_test, dataset.Y_std).item(), 4)
    
-    # ### Convert everything back to float for Naval 
+    # # ### Convert everything back to float for Naval 
     
-    # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
-    nlpd_test = np.round(nlpd_marginal(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
+    # # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
+    # nlpd_test = np.round(nlpd_marginal(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
 
 
 # Verify: elbo, q*(u), p(f*|y)

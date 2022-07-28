@@ -23,7 +23,7 @@ import pymc3 as pm
 
 if __name__ == '__main__':
     
-        ### Elevator testin gon pymc3 sampling
+        ### Elevator testing on pymc3 sampling
         from utils.experiment_tools import get_dataset_class
         from utils.metrics import rmse, nlpd_mixture, nlpd
         

@@ -31,7 +31,7 @@ def get_training_dataset(X, Y, train_index, noise_scale):
     
     train_sizes = [30,100,200,400]   
     X1, X2, X3, X4 = [X[train_index[0:train_sizes[i]]] for i in np.arange(4)]
-    Y1, Y2, Y3, Y4 = [Y[train_index[0:train_sizes[i]]] for i in np.arange(4) + ]
+    Y1, Y2, Y3, Y4 = [Y[train_index[0:train_sizes[i]]] for i in np.arange(4)]
     
     Y1 = Y1 + torch.randn(len(Y1))*noise_scale
     return (X1, X2, X3, X4), (Y1, Y2, Y3, Y4)
@@ -76,8 +76,6 @@ def plot_contour_camel_back(train_index, train_sizes):
         plt.scatter(X[indices][:,0], X[indices][:,1], marker='+', color='k')
         plt.axis('off')
             
-
-
 if __name__ == "__main__":
     
     xx, yy = get_grid_mesh()
@@ -92,14 +90,14 @@ if __name__ == "__main__":
 
     ##### Training data and initial inducing points
     
-    (X1,X2,X3,X4), (Y1,Y2,Y3,Y4) = get_training_dataset(X,Y,train_index)
+    (X1,X2,X3,X4), (Y1,Y2,Y3,Y4) = get_training_dataset(X,Y,train_index,1)
     
-    X_train = X1
-    Y_train = Y1
+    X_train = X3
+    Y_train = Y3
     
-    num_inducing = [5,10,12]
+    num_inducing = [20]
     
-    model_name = 'SGPR_HMC'
+    model_name = 'SGPR'
     
     if model_name == 'SGPR':
     
@@ -117,11 +115,11 @@ if __name__ == "__main__":
             
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
             likelihood.noise = 1e-4  # Some small value, but don't make it too small or numerical performance will suffer. I recommend 1e-4.
-            likelihood.noise_covar.raw_noise.requires_grad_(False)  # Mark that we don't want to train the noise.
+            #likelihood.noise_covar.raw_noise.requires_grad_(False)  # Mark that we don't want to train the noise.
             
             model_sgpr = SparseGPR(X_train, Y_train, likelihood, Z_init)
             optimizer = torch.optim.Adam(model_sgpr.parameters(), lr=0.01)
-            losses = model_sgpr.train_model(optimizer, max_steps=1500)
+            losses = model_sgpr.train_model(optimizer, max_steps=200)
             
             ## Extract inducing locations and posterior mean
             f_preds = model_sgpr.posterior_predictive(X)
@@ -158,18 +156,20 @@ if __name__ == "__main__":
             
             #Z_init = X_train[np.random.randint(0, len(X_train), num_inducing[i])]
             Z_init = torch.randn(num_inducing[i], 2)
+            #Z_init = torch.randn(33, 2)
+
                 
             ### Initialize likelihood and model
             
             likelihood = gpytorch.likelihoods.GaussianLikelihood()
             likelihood.noise = 1e-4  # Some small value, but don't make it too small or numerical performance will suffer. I recommend 1e-4.
-            likelihood.noise_covar.raw_noise.requires_grad_(False)  # Mark that we don't want to train the noise.
+            #likelihood.noise_covar.raw_noise.requires_grad_(False)  # Mark that we don't want to train the noise.
             
             model_hmc = BayesianSparseGPR_HMC(X_train, Y_train, likelihood, Z_init)
-            optimizer = torch.optim.Adam(model_sgpr.parameters(), lr=0.01)
+            optimizer = torch.optim.Adam(model_hmc.parameters(), lr=0.01)
             
-            hmc_scheduler = np.arange(10,1500,25)
-            losses = model_hmc.train_model(optimizer, max_steps=200, break_for_hmc=hmc_scheduler)
+            hmc_scheduler = np.arange(10,1500,100)
+            losses = model_hmc.train_model(optimizer, max_steps=150, hmc_scheduler=hmc_scheduler)
             
             ## Extract inducing locations and posterior mean
             f_preds = model_hmc.posterior_predictive(X)
@@ -180,7 +180,7 @@ if __name__ == "__main__":
             plt.subplot(1,3,i+1)
             plt.contourf(xx, yy, f_preds.loc.reshape(81,41).detach().cpu(), levels=50, cmap=plt.get_cmap('jet'))
             plt.scatter(X_train[:,0].numpy(), X_train[:,1].numpy(), c='k', marker='x')
-            plt.scatter(Z_opt[:,0].numpy(), Z_opt[:,1].numpy(), c='cyan', marker='o')
+            plt.scatter(Z_opt[:,0].numpy(), Z_opt[:,1].numpy(), c='r', marker='o')
             plt.xlim(-2,2)
             plt.ylim(-1,1)
             plt.title('M='+str(num_inducing[i]), fontsize='small')

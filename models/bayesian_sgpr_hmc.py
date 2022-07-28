@@ -25,10 +25,8 @@ def func(x):
 
 class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
     
-   """ The sparse GP class for regression with the doubly 
-        collapsed stochastic bound.
-        q(u) is implicit 
-        theta is sampled using HMC based on pre-specified intervals
+   """ The sparse GP class for regression with the doubly collapsed stochastic bound.
+        q(u) is implicit theta is sampled using HMC based on pre-specified intervals
    """
       
    def __init__(self, train_x, train_y, likelihood, Z_init):
@@ -126,7 +124,10 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
               if trace_hyper is not None:
                   loss = 0.0
                   for i in range(len(trace_hyper)):
-                      hyper_sample = trace_hyper[i].cuda()
+                      if self.train_x.type == 'cuda':
+                          hyper_sample = trace_hyper[i].cuda()
+                      else: 
+                          hyper_sample = trace_hyper[i]
                       self.update_model_to_hyper(elbo, hyper_sample)
                       output = self(self.train_x)
                       loss += -elbo(output, self.train_y).sum()/len(trace_hyper)
@@ -235,14 +236,14 @@ if __name__ == '__main__':
     from utils.experiment_tools import get_dataset_class
     from utils.metrics import rmse, nlpd_mixture, nlpd
 
-    dataset = get_dataset_class('Elevator')(split=0, prop=0.8)
+    dataset = get_dataset_class('Concrete')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = dataset.X_train.double(), dataset.Y_train.double(), dataset.X_test.double(), dataset.Y_test.double()
     
     ####### Initialising model class, likelihood, inducing inputs ##########
     
     likelihood = gpytorch.likelihoods.GaussianLikelihood()
     
-    Z_init = X_train[np.random.randint(0,len(X_train), 300)]
+    Z_init = X_train[np.random.randint(0,len(X_train), 100)]
     
     if torch.cuda.is_available():
         X_train = X_train.cuda()
@@ -260,23 +261,25 @@ if __name__ == '__main__':
     
     ######## Custom training depending on model class #########
     
-#     trace_hyper, step_sizes, perf_time = model.train_fixed_model()
+    trace_hyper, step_sizes, perf_time = model.train_fixed_model()
     max_steps = 500
     break_for_hmc = np.concatenate((np.arange(100,500,50), np.array([max_steps-1])))
     losses, trace_hyper, step_sizes, perf_time = model.train_model(optimizer, max_steps=max_steps, hmc_scheduler=break_for_hmc)
     
 #     ##### Predictions ###########
     
-#     Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
-#     y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
-    
+    Y_test_pred_list = mixture_posterior_predictive(model, X_test, trace_hyper) ### a list of predictive distributions
+    y_mix_loc = np.array([np.array(dist.loc.detach()) for dist in Y_test_pred_list])    
+    y_mix_std = np.array([np.array(dist.covariance_matrix.diag().detach().sqrt()) for dist in Y_test_pred_list])    
+
+     
 #     #### Compute Metrics  ###########
     
-#     rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
-#     nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
-
-#     print('Test RMSE: ' + str(rmse_test))
-#     print('Test NLPD: ' + str(nlpd_test))
+    rmse_test = rmse(torch.tensor(np.mean(y_mix_loc, axis=0)), Y_test, dataset.Y_std)
+    nlpd_test = np.round(nlpd_mixture(Y_test_pred_list, Y_test, dataset.Y_std).item(), 4)
+    
+    print('Test RMSE: ' + str(rmse_test))
+    print('Test NLPD: ' + str(nlpd_test))
     
 #     ################################################
     
