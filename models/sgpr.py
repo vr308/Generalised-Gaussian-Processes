@@ -162,21 +162,21 @@ class SparseGPR(gpytorch.models.ExactGP):
 
 if __name__ == "__main__":
     
-    # N = 1000  # Number of training observations
+    N = 1000  # Number of training observations
 
-    # X = torch.randn(N) * 2 - 1  # X values
-    # Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
+    X = torch.randn(N) * 2 - 1  # X values
+    Y = func(X) + 0.2 * torch.randn(N)  # Noisy Y values
 
-    # # Initial inducing points
-    # Z_init = torch.randn(12)
+    # Initial inducing points
+    Z_init = torch.randn(12)
     
-    # # Initialise model and likelihood
-    # likelihood = gpytorch.likelihoods.GaussianLikelihood()
-    # model = SparseGPR(X[:,None], Y, likelihood, Z_init)
-    # optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
+    # Initialise model and likelihood
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    model = SparseGPR(X[:,None], Y, likelihood, Z_init)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
         
-    # # Train
-    # losses = model.train_model(optimizer, num_steps=5000)
+    # Train
+    losses = model.train_model(optimizer)
     
     # # # Test 
     # test_x = torch.linspace(-8, 8, 1000)
@@ -245,6 +245,9 @@ if __name__ == "__main__":
     
     # # nlpd_train = np.round(nlpd(Y_train_pred, Y_train, dataset.Y_std).item(), 4)
     # nlpd_test = np.round(nlpd_marginal(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
+
+    print('Test RMSE: ' + str(rmse_test))
+    print('Test NLPD: ' + str(nlpd_test))
 
 
 # Verify: elbo, q*(u), p(f*|y)

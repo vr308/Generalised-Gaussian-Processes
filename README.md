@@ -24,10 +24,10 @@ Inference methods
 1) Hamiltonian Monte Carlo (pymc3)
 2) Stochastic Variational Inference (SVI) (gpytorch/pytorch)
 
-Future work (Summer, 2021)
+Future work 
 -------------------
 3) Elliptical Slice Sampling (pymc3)
-4) Dynamic Nested Sampling (pymc3)
+4) Dynamic Nested Sampling (dynesty)
 
 Code Layout
 -----------------

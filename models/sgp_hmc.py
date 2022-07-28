@@ -103,36 +103,55 @@ def predict_sgpmc(model, hmc_helper, samples, X_test):
         for var, var_samples in zip(hmc_helper.current_state, samples):
             var.assign(var_samples[i])
             
-        f_mean, f_cov = model.predict_f(X_test, full_cov=True)
-        y_cov = f_cov + np.eye(len(X_test))*model.likelihood.variance.numpy()
+        #f_mean, f_cov = model.predict_f(X_test, full_cov=True)
+        f_mean, f_cov_diag = model.predict_f(X_test, full_cov=False)
+
+        #y_cov = f_cov + np.eye(len(X_test))*model.likelihood.variance.numpy()
+        y_var = f_cov_diag + model.likelihood.variance.numpy()
         
         f_means.append(np.array(f_mean).T)
+        y_stds.append(np.array(np.sqrt(y_var)).T)
         #f_samples.append(np.array(model.predict_f_samples(X_test,3)))
-        y_stds.append(np.array(np.sqrt(np.diag(y_cov[0]))).T)
+        #y_stds.append(np.array(np.sqrt(np.diag(y_cov[0]))).T)
         
         ## torch multivariate normal to compute metrics
-        torch_mean = torch.tensor(np.array(f_mean)).squeeze()
-        torch_cov = torch.tensor(np.array(y_cov[0]))
-        y_pred = torch.distributions.MultivariateNormal(torch_mean, torch_cov)
-        y_pred_dists.append(y_pred)
+        #torch_mean = torch.tensor(np.array(f_mean)).squeeze()
+        #torch_cov = torch.tensor(np.array(y_cov[0]))
+        #y_pred = torch.distributions.MultivariateNormal(torch_mean, torch_cov)
+        #y_pred_dists.append(y_pred)
 
     f_means = np.vstack(f_means)
     #f_samples = np.vstack(f_samples)
     y_stds = np.vstack(y_stds)
     
     ## prediction intervals
-    lower, upper = get_posterior_predictive_uncertainty_intervals(f_means, y_stds)
+    #lower, upper = get_posterior_predictive_uncertainty_intervals(f_means, y_stds)
     pred_mean = np.mean(f_means, axis=0)
-    return pred_mean, y_pred_dists, lower, upper
+    return pred_mean, f_means, y_stds#y_pred_dists
 
 if __name__ == '__main__':
     
     from utils.experiment_tools import get_dataset_class
-    from utils.metrics import rmse, nlpd_mixture, nlpd
+    from utils.metrics import rmse, nlpd_mixture, nlpd, negative_log_predictive_mixture_density
 
-    dataset = get_dataset_class('Elevator')(split=7, prop=0.8)
+    dataset = get_dataset_class('Elevator')(split=0, prop=0.8)
     X_train, Y_train, X_test, Y_test = f64(dataset.X_train), f64(dataset.Y_train)[:,None], f64(dataset.X_test), f64(dataset.Y_test)[:,None]
 
+    data = (X_train, Y_train)
+    data_test = (X_test, Y_test)
+    
+    ## Train model
+    Z_init = np.array(X_train)[np.random.randint(0, len(X_train), 500)]
+    model, hmc_helper, samples, wall_clock_secs = train_sgp_hmc(data, Z_init, input_dims=X_train.shape[-1], tune=100, num_samples=100)
+    
+    ### Predictions
+    
+    pred_mean, f_means, y_stds = predict_sgpmc(model, hmc_helper, samples, X_test)
+    
+    ### Metrics ###
+    
+    rmse_test = np.round(rmse(torch.tensor(pred_mean), np.array(Y_test).flatten(), dataset.Y_std), 4).item()
+    nlpd_test = np.round(negative_log_predictive_mixture_density(Y_test, f_means, y_stds, dataset.Y_std.item()), 4).item()
 
 #     ## Creating 1d synthetic data
 
@@ -152,17 +171,6 @@ if __name__ == '__main__':
 #     # ## Test
 #     # X_test = f64(tf.linspace(-8.0, 8.0, 1000)[:,None])
 #     # Y_test = f64(func(X_test))
-    
-    data = (X_train, Y_train)
-    data_test = (X_test, Y_test)
-    
-    ## Train model
-    Z_init = np.array(X_train)[np.random.randint(0, len(X_train), 300)]
-    model, hmc_helper, samples, wall_clock_secs = train_sgp_hmc(data, Z_init, input_dims=X_train.shape[-1], tune=100, num_samples=100)
-    
-#     # ## Predictions
-    
-#     pred_mean, y_pred_dists, lower, upper = predict_sgpmc(model, hmc_helper, samples, X_test)
     
 #     # # ## Visualisation
     
