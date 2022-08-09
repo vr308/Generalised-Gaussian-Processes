@@ -162,6 +162,9 @@ class SparseGPR(gpytorch.models.ExactGP):
 
 if __name__ == "__main__":
     
+    
+    
+    
     N = 1000  # Number of training observations
 
     X = torch.randn(N) * 2 - 1  # X values

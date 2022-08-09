@@ -29,7 +29,8 @@ def experiment_name(
     max_iter,
     num_epochs,
     batch_size, 
-    step_sizes
+    step_sizes,
+    num_samples
 ):
     if model_name in ('SGPR', 'Bayesian_SGPR_HMC'):
         return (
@@ -70,6 +71,34 @@ def experiment_name(
            .add("frac", train_test_split)
            .add("max_iter", max_iter)
            .get())
+    elif model_name == 'all_in_HMC':
+        return (
+            ExperimentName(date_str)
+            .add("dataset", dataset_name)
+           .add("model_name", model_name)
+           .add("split", split_index)
+           .add("frac", train_test_split)
+           .add("num_samples", num_samples))
+    
+def experiment_name_allin(
+    date_str,
+    dataset_name,
+    model_name,
+    split_index,
+    train_test_split,
+    num_inducing,
+    num_samples, 
+    num_tune
+):  return (
+           ExperimentName(date_str)
+           .add("dataset", dataset_name)
+           .add("model_name", model_name)
+           .add("split", split_index)
+           .add("frac", train_test_split)
+           .add("num_samples", num_samples)
+           .add("num_tune", num_tune)
+           .get())
+
     
 def experiment_name_tf(
     date_str,

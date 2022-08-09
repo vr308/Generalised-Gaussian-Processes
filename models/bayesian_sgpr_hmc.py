@@ -137,6 +137,8 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                     print('---------------HMC step start------------------------------')
                     print('Iter %d/%d - Loss: %.3f ' % (n_iter, max_steps, loss.item()) + '\n'),
                     Z_opt = self.inducing_points.detach().cpu().numpy()
+                    if self.train_x.shape[-1] == 1:
+                        Z_opt = Z_opt[:,None]
                     #Z_opt = self.inducing_points.numpy()[:,None]
                     
                     if n_iter in (hmc_scheduler[0], hmc_scheduler[-1]):
@@ -147,7 +149,7 @@ class BayesianSparseGPR_HMC(gpytorch.models.ExactGP):
                         num_tune = 25
                         num_samples = 10
                         prev_step_size = trace_hyper.get_sampler_stats('step_size')[0]
-                        sampler_params = {'step_scale': prev_step_size}
+                        #sampler_params = {'step_scale': prev_step_size}
                         
                     trace_hyper = self.sample_optimal_variational_hyper_dist(num_samples, self.data_dim, Z_opt, num_tune, sampler_params=None)  
                     print('---------------HMC step finish------------------------------')

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-co2 experiment - gpr + hmc, sgpr + hmc (Fixed Z)
+co2 experiment - gpr + hmc, sgpr + hmc (Fixed Z), sgpr + ml-ii
 
 """
 
@@ -11,6 +11,11 @@ import pymc3 as pm
 import theano.tensor as tt
 import torch
 import scipy.stats as st
+import gpytorch
+from gpytorch.means import ZeroMean
+from gpytorch.kernels import ScaleKernel, RBFKernel, InducingPointKernel, PeriodicKernel
+from gpytorch.kernels import RatQuad, 
+from gpytorch.distributions import MultivariateNormal
 from utils.metrics import rmse, nlpd_mixture, nlpd, negative_log_predictive_mixture_density
 from utils.config import DATASET_DIR, LOG_DIR
 
@@ -77,9 +82,69 @@ def load_co2_dataset():
     t_test = t[sep_idx:].values[:,None]
     return y_train, t_train, y_test, t_test, std_co2
 
+class Co2SparseGPR(gpytorch.models.ExactGP):
+
+    def __init__(self, train_x, train_y, likelihood, Z_init):
+
+        """The sparse GP class for regression with the collapsed bound.
+           q*(u) is implicit.
+        """
+        super(Co2SparseGPR, self).__init__(train_x, train_y, likelihood)
+        self.train_x = train_x
+        self.train_y = train_y
+        self.inducing_points = Z_init
+        self.num_inducing = len(Z_init)
+        self.likelihood = likelihood
+        self.mean_module = ZeroMean()
+        self.base_covar_module = ScaleKernel(RBFKernel(ard_num_dims = self.train_x.shape[-1])) +
+                                ScaleKernel(Ration, kwargs)
+        self.covar_module = InducingPointKernel(self.base_covar_module, inducing_points=Z_init, likelihood=self.likelihood)
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+        return MultivariateNormal(mean_x, covar_x)
+
 if __name__ == "__main__":
     
     y_train, t_train, y_test, t_test, std_co2 = load_co2_dataset()
+    
+    ### SGPR + ML-II
+    likelihood = gpytorch.likelihoods.GaussianLikelihood()
+    
+    ## Fixed at X_train[np.random.randint(0,len(X_train), 200)]
+    #Z_init = torch.randn(num_inducing, input_dim)
+    Z_init = t_train[np.random.randint(0,len(t_train), 182)]
+    
+    # if torch.cuda.is_available():
+    #     X_train = X_train.cuda()
+    #     X_test = X_test.cuda()
+    #     Y_train = Y_train.cuda()
+    #     Y_test = Y_test.cuda()
+    #     Z_init = Z_init.cuda()
+
+    model = SparseGPR(torch.Tensor(t_train), torch.Tensor(y_train).flatten(), likelihood, torch.Tensor(Z_init))
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    
+    if torch.cuda.is_available():
+        model = model.cuda()
+        likelihood = likelihood.cuda()
+       
+    ####### Custom training depending on model class #########
+    
+    losses = model.train_model(optimizer, max_steps=4000)
+    
+    #Y_train_pred = model.posterior_predictive(X_train)
+    Y_test_pred = model.posterior_predictive(torch.Tensor(t_test))
+    
+    import scipy.stats as st
+    
+    std_co2_tensor = torch.Tensor([std_co2])
+    rmse_test = np.round(rmse(Y_test_pred.loc, torch.Tensor(t_test), torch.Tensor([1.0])).item(), 4)
+   
+    # ### Convert everything back to float for Naval 
+    
+    nlpd_test = np.round(nlpd_marginal(Y_test_pred, Y_test, dataset.Y_std).item(), 4)
 
     ## SGPR + HMC / GPR + HMC (fixed Z)
     

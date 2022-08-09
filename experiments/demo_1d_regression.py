@@ -21,6 +21,7 @@ import tensorflow_probability as tfp
 from models.sgpr import SparseGPR
 from models.bayesian_sgpr_hmc import BayesianSparseGPR_HMC, mixture_posterior_predictive
 from models.sgp_hmc import train_sgp_hmc, predict_sgpmc
+
 gpflow.config.set_default_float(np.float64)
 gpflow.config.set_default_jitter(1e-4)
 gpflow.config.set_default_summary_fmt("notebook")

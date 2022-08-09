@@ -12,6 +12,7 @@ in a tabular format - mainly aggregating over splits (there is a .json for each 
 ## Jan 25 has BSGPR HMC
 ## Jan 26 has GPR+HMC / Fixed Z
 ## Jan 27 has SGPMC
+## Aug 2 has allInHMC
 
 import sys
 from argparse import ArgumentParser, Namespace
@@ -40,7 +41,7 @@ def parse_command_line_args() -> Namespace:
         nargs="*",
         help="Name of the log directories containing experimental results, format is e.g. Feb_12."
              "Specify more than one in case the experiment run overnight.",
-        default=['Jan_25']#["Jan_01", "Jan_02", "Jan_03"]
+        default=['Aug_02']#["Jan_01", "Jan_02", "Jan_03"]
     )
     return parser.parse_args()
 
@@ -91,8 +92,9 @@ if __name__ == "__main__":
     if df['model_name'][0] == 'GPR_HMC':
         df['perf_times'] = [x[0] for x in df['perf_times']]
         
-    if df['model_name'][0] == 'Bayesian_SGPR_HMC':
+    if df['model_name'][0] in ('Bayesian_SGPR_HMC' or 'all_in_HMC'):
         df['perf_times'] = [np.sum(x) for x in df['perf_times']]
     
+    df['perf_times'] = [x[0] for x in df['perf_times']]
     perf_summary = df.groupby(['dataset_name', 'model_name'])[time_metrics].agg(['mean', standard_error])
     print(perf_summary)

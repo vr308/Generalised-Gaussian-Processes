@@ -50,11 +50,11 @@ df = pd.read_csv(filename, sep=',')
 fig = plt.figure(figsize=(16,4))
 _ax = fig.add_subplot(111, frame_on=False)
 _ax.tick_params(labelcolor='w', top=False, bottom=False, left=False, right=False)
-colors = ['b', 'magenta', 'steelblue', 'r', 'g','orange']
-model_cols = ['svgp_', 'fixed_z', 'sgpmc_', 'sgpr_', 'sgpr_hmc_', 'gpr_hmc']
-models = ['SVGP', 'SGPR + HMC (Fix Z)', 'JointHMC', 'SGPR (ML-II)', 'SGPR + HMC (Adapt Z)','GPR + HMC']
+colors = ['cyan', 'b', 'magenta', 'steelblue', 'r', 'g','orange']
+model_cols = ['fbgp_', 'svgp_', 'fixed_z', 'sgpmc_', 'sgpr_', 'sgpr_hmc_', 'gpr_hmc']
+models = ['FBGP', 'SVGP', 'SGPR + HMC (Fix Z)', 'JointHMC', 'SGPR (ML-II)', 'SGPR + HMC (ours)','GPR + HMC']
 #models = df.columns[3:]
-num_models = 6
+num_models = 7
 for _ in range(5): # iterate over subplots
     n_plot = _ + 1
     ax = fig.add_subplot(1,5,n_plot) 
