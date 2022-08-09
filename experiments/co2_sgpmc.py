@@ -194,5 +194,5 @@ if __name__ == '__main__':
     
 #     # ## Predictions
     
-#     pred_mean, y_pred_dists, lower, upper = predict_sgpmc(model, hmc_helper, samples, X_test)
+    pred_mean, y_pred_dists, lower, upper = predict_sgpmc(model, hmc_helper, samples, t_test)
     
