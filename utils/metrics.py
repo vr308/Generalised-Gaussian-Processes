@@ -54,7 +54,7 @@ def nlpd_marginal(Y_test_pred, Y_test, Y_std):
     var = Y_test_pred.covariance_matrix.diag().detach().cpu().numpy()
     for i in np.arange(len(Y_test)):
         pp_lpd = stats.norm.logpdf(Y_test[i], loc = means[i], scale = np.sqrt(var[i])) - np.log(Y_std)
-        test_lpds_per_point.append(pp_lpd)
+        test_lpds_per_point.append(pp_lpd.item())
     return -np.mean(test_lpds_per_point)
     
   

@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
     sig_sd_true = 5.0
     lengthscale_true = 2.0
-    noise_sd_true = np.sqrt(10)
+    noise_sd_true = np.sqrt(2)
     uniform = True
 
     cov = pm.gp.cov.Constant(sig_sd_true**2)*pm.gp.cov.ExpQuad(1, lengthscale_true)
@@ -73,13 +73,13 @@ if __name__ == "__main__":
 
     f_all = np.random.multivariate_normal(mean(X_all).eval(), cov=cov(X_all, X_all).eval(), size=1)
     
-    X_10, y_10 = generate_gp_training(X_all, f_all, 10, noise_sd_true, uniform)
-    X_15, y_15 = generate_gp_training(X_all, f_all, 15, noise_sd_true, uniform)
-    X_40, y_40 = generate_gp_training(X_all, f_all, 40, noise_sd_true, uniform)
+    X_10, y_10 = generate_gp_training(X_all, f_all, 5, noise_sd_true, uniform)
+    X_15, y_15 = generate_gp_training(X_all, f_all, 10, noise_sd_true, uniform)
+    X_40, y_40 = generate_gp_training(X_all, f_all, 20, noise_sd_true, uniform)
     
     X_train = [X_10, X_15, X_40]
     y_train = [y_10, y_15, y_40]
-    sizes = [10,15,40]
+    sizes = [5,10,30]
 
     # Data attributes
 
@@ -89,9 +89,9 @@ if __name__ == "__main__":
     
     # LML Surface as a function of training set size
     
-    plt.figure(figsize=(8,4))
-    # GP fit on 10 data points
-    
+    #fig, axes = plt.figure(figsize=(8,4))
+    fig, axes = plt.subplots(nrows=1, ncols=3)
+
     for i in [0,1,2]:
         
         X = X_train[i].ravel()
@@ -101,11 +101,11 @@ if __name__ == "__main__":
     
         lengthscale_init = np.random.normal()
         
-        kernel = 100 * RBF(length_scale=10) \
+        kernel = 10 * RBF(length_scale=10, length_scale_bounds=(0.1,5)) \
                 + WhiteKernel(noise_level=1,noise_level_bounds="fixed")
     
         gp = GaussianProcessRegressor(kernel=kernel,
-                                          alpha=0.0, n_restarts_optimizer=1).fit(X[:,None], y)
+                                          alpha=0.0, n_restarts_optimizer=2).fit(X[:,None], y)
         print(gp.kernel_)
     
         #gp.log_marginal_likelihood((-2.302, -2.302))
@@ -122,7 +122,7 @@ if __name__ == "__main__":
         level = np.around(np.logspace(np.log10(vmin), np.log10(vmax), 100), decimals=2)
         #level = np.arange(22.70,23,0.01)
         #plt.figure(figsize=(8,4))
-        plt.contourf(Theta0, Theta1, -LML,
+        CC=plt.contourf(Theta0, Theta1, -LML,
                     levels=level, alpha=1, extend='both', nchunk=0)
         C = plt.contour(Theta0, Theta1, -LML, levels=level[::10], colors='black', linewidth=.05, alpha=0.5, nchunk=0)
         plt.clabel(C, fontsize=5)
@@ -136,14 +136,15 @@ if __name__ == "__main__":
         #plt.axhline(y=lengthscale_true, color='r')
         #plt.axvline(x=sig_sd_true**2, color='r')
         plt.scatter(sig_sd_true**2, lengthscale_true, color='r', marker='x')
-        plt.scatter(gp.kernel_.k1.k1.constant_value, gp.kernel_.k1.k2.length_scale, marker='x', color='blue')
-        plt.xlabel("Sig var", fontsize='x-small')
-        plt.ylabel("Lengthscale", fontsize='x-small')
+        #plt.scatter(gp.kernel_.k1.k1.constant_value, gp.kernel_.k1.k2.length_scale, marker='x', color='blue')
+        plt.xlabel(r"Output scale ($\sigma_{f}$)", fontsize='x-small')
+        plt.ylabel(r"Lengthscale ($\ell$)", fontsize='x-small')
         plt.xticks(fontsize='small')
         plt.yticks(fontsize='small')
         plt.title('Train size = ' + str(sizes[i]), fontsize='small')
     
-    plt.suptitle("Neg. log marginal likelihood (Sig var vs. Lengthscale)" + '\n' + 'Model Mismatch', fontsize='small')
+    plt.suptitle("Neg. log marginal likelihood", fontsize='small')
+    fig.colorbar(CC, ax=axes.ravel().tolist())
 
 
     ### Understanding the variability of the converged hypers under ML-II
